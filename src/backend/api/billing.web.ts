@@ -9,6 +9,7 @@
 import { appInstances } from '@wix/app-management';
 import { auth } from '@wix/essentials';
 import { Permissions, webMethod } from '@wix/web-methods';
+import { APP_ID, APP_PRODUCT_ID } from '../../lib/config';
 import {
   createCheckoutUrl,
   isProductionContext,
@@ -31,15 +32,11 @@ export const getEntitlement = webMethod(
 export const getCheckoutUrl = webMethod(
   Permissions.Admin,
   async (): Promise<string | null> => {
-    const env = import.meta.env as
-      | { WIX_APP_PRODUCT_ID?: string; WIX_APP_ID?: string }
-      | undefined;
-
-    const productId = env?.WIX_APP_PRODUCT_ID;
-    if (!productId) {
+    if (!APP_PRODUCT_ID) {
       throw new Error(
-        'No purchase plan is configured for this app yet. Set WIX_APP_PRODUCT_ID to ' +
-          "the Single plan's product ID from the app dashboard Pricing page.",
+        'No purchase plan is configured for this app yet. Set APP_PRODUCT_ID in ' +
+          "src/lib/config.ts to the Single plan's product ID from the app " +
+          'dashboard Pricing page.',
       );
     }
 
@@ -50,8 +47,8 @@ export const getCheckoutUrl = webMethod(
     }
 
     return createCheckoutUrl({
-      productId,
-      appId: env?.WIX_APP_ID ?? '',
+      productId: APP_PRODUCT_ID,
+      appId: APP_ID,
       instanceId: instance.instanceId,
       testCheckout: !isProductionContext(import.meta.env),
     });

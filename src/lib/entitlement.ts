@@ -42,47 +42,18 @@ export function isProductionContext(env: EnvFlags | undefined): boolean {
 }
 
 /**
- * Whether to force the free tier for testing.
- *
- * Fails CLOSED in every ambiguous case: the override is honoured only when it
- * is exactly `"true"` **and** the build is provably dev or test. Anything else —
- * unset, malformed, or production — defers to the real purchase check. A
- * paying customer must never be downgraded to the free tier by a stray env var,
- * and no env var may ever grant paid features either (this flag can only
- * restrict, never grant).
- */
-export function shouldForceFreeTier(
-  raw: string | undefined,
-  env: EnvFlags | undefined,
-): boolean {
-  if (raw === undefined || raw.trim() === '') return false;
-  if (isProductionContext(env)) {
-    console.warn(
-      '[entitlement] FORCE_FREE_TIER is set in a production context and is being ' +
-        'ignored.',
-    );
-    return false;
-  }
-  const forced = raw.trim().toLowerCase() === 'true';
-  if (forced) console.warn('[entitlement] FORCE_FREE_TIER is on: treating this instance as free.');
-  return forced;
-}
-
-/**
  * Resolves whether this instance has paid.
  *
  * Fails CLOSED to the free tier: if the billing check can't be completed, the
  * owner keeps every read-only capability but writes stay locked, and `degraded`
  * is set so the UI can say the check failed rather than silently implying the
  * owner needs to buy something they may already own.
+ *
+ * There is no override for testing the free tier, and none is needed: an
+ * instance that hasn't purchased *is* the free tier, which is the state every
+ * fresh install starts in.
  */
 export async function resolveEntitlement(): Promise<Entitlement> {
-  const env = import.meta.env as (EnvFlags & { FORCE_FREE_TIER?: string }) | undefined;
-
-  if (shouldForceFreeTier(env?.FORCE_FREE_TIER, env)) {
-    return { state: 'FREE', degraded: false };
-  }
-
   try {
     const elevated = auth.elevate(billing.getPurchaseHistory);
     const response = await elevated();
