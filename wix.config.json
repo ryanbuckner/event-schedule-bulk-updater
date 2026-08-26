@@ -1,0 +1,5 @@
+{
+  "$schema": "https://dev.wix.com/wix-cli/schemas/wix-config.json",
+  "appId": "8cb00406-2563-477f-b0da-ecc3a701776f",
+  "projectId": "event-schedule-bulk-updater"
+}

@@ -1,0 +1,5 @@
+{
+  "$schema": "https://dev.wix.com/wix-cli/schemas/dashboard-page.json",
+  "id": "9231b47d-468c-4a74-9b96-5cacafd9b0d2",
+  "title": "Event Schedule Bulk Updater"
+}

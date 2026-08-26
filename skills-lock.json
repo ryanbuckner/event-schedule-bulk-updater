@@ -1,0 +1,65 @@
+{
+  "version": 1,
+  "skills": {
+    "replatform": {
+      "source": "wix/skills",
+      "sourceType": "github",
+      "skillPath": "skills/wix-replatform/SKILL.md",
+      "computedHash": "94951fff481b1ba218560c962d790adf36377c9cda6d9c92781dab21f80ae54f"
+    },
+    "wix-app": {
+      "source": "wix/skills",
+      "sourceType": "github",
+      "skillPath": "skills/wix-app/SKILL.md",
+      "computedHash": "ca6ccaf182fc842b34253c32ba3f4eea9485ab9b092eaf42f9b3ef4b4628c5b1"
+    },
+    "wix-auth": {
+      "source": "wix/skills",
+      "sourceType": "github",
+      "skillPath": "skills/wix-auth/SKILL.md",
+      "computedHash": "bf7376e4c8c35712962a1a5b621adbcf8b7dc8bdbc0a1870e47992e317b6d213"
+    },
+    "wix-base44-connector": {
+      "source": "wix/skills",
+      "sourceType": "github",
+      "skillPath": "skills/wix-base44-connector/SKILL.md",
+      "computedHash": "a59dc86db53d13f27a0f16c42a78e5cd9b6851906ad7b4bed815bf778482ea4e"
+    },
+    "wix-design-system": {
+      "source": "wix/skills",
+      "sourceType": "github",
+      "skillPath": "skills/wix-design-system/SKILL.md",
+      "computedHash": "47da8b5791959362c730a630c9893473a7e7fa645bbe93b63b306df2ddccbbaf"
+    },
+    "wix-docs": {
+      "source": "wix/skills",
+      "sourceType": "github",
+      "skillPath": "skills/wix-docs/SKILL.md",
+      "computedHash": "f55d8121f8f54a9cdfa0b351041b52ac0c60abba44cc33dad76e29387a68ae1b"
+    },
+    "wix-headless": {
+      "source": "wix/skills",
+      "sourceType": "github",
+      "skillPath": "skills/wix-headless/SKILL.md",
+      "computedHash": "7adc2f8f957ea2edec4f3f96cae193e3d88df387c1e5e34ef00afc7f911bbf39"
+    },
+    "wix-manage": {
+      "source": "wix/skills",
+      "sourceType": "github",
+      "skillPath": "skills/wix-manage/SKILL.md",
+      "computedHash": "63cf5e1f27edf849b3d52aeef8c7dfa058019da1180117b443ac189a468f3352"
+    },
+    "wix-vibe-headless": {
+      "source": "wix/skills",
+      "sourceType": "github",
+      "skillPath": "skills/wix-vibe-headless/SKILL.md",
+      "computedHash": "0b7d09201ccb8e97de11a8324a9f39811af6894f73245fe605b2b7e20c7452f4"
+    },
+    "writing-great-skills": {
+      "source": "wix/skills",
+      "sourceType": "github",
+      "skillPath": ".claude/skills/writing-great-skills/SKILL.md",
+      "computedHash": "4deb21855fb4deeeb1b8217b041faff003fd0c915d24a22f636851c520bc9c5c"
+    }
+  }
+}
