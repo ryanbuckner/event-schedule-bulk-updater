@@ -9,9 +9,25 @@
  * Every write goes to the event's DRAFT schedule — the API has no path to the
  * published one — so publishing is a separate, explicit step and the UI never
  * implies an edit is live until it happens.
+ *
+ * Column labels match the single-item editor's own field names ("Item Name",
+ * "Start Date and Time", "End Date and Time") so the grid reads as the same
+ * schedule, not a different tool.
+ *
+ * Place and Tags share the Start/End columns rather than getting columns of
+ * their own — stacked below each date/time picker — so both fields get a
+ * usable width instead of being squeezed into a narrow column apiece.
+ *
+ * Description and Time zone are deliberately not columns here — Description
+ * isn't a fit for bulk editing, and Time zone was cut to keep the grid from
+ * getting too cramped — but both stay fully readable and writable through
+ * CSV export and import (see `csv.ts`). Because there's no cell for either,
+ * the grid never marks them changed, so a grid save's field mask never
+ * includes them and their current server values are left untouched.
  */
 
 import { dashboard } from '@wix/dashboard';
+import { i18n } from '@wix/essentials';
 import {
   Box,
   Button,
@@ -21,7 +37,10 @@ import {
 } from '@wix/design-system';
 import {
   CollectionEmptyState,
+  MultiBulkActionToolbar,
   PrimaryActionButton,
+  PrimaryActions,
+  SecondaryActions,
   Table,
   TableTopNotification,
   ToolbarSecondaryActions,
@@ -29,27 +48,27 @@ import {
   type TableColumn,
 } from '@wix/patterns';
 import { CollectionPage } from '@wix/patterns/page';
+import { Check, Delete, Publish, Unsaved } from '@wix/wix-ui-icons-common';
 import React, { useCallback, useRef, useState } from 'react';
 import {
   getSchedule,
   saveSchedule,
   setScheduleVisibility,
 } from '../../../backend/api/schedule.web';
-import { formatInZone } from '../../../lib/datetime';
-import { toCsv, exportFilename } from '../../../lib/csv';
-import {
-  LIMITS,
-  type EventSummary,
-  type RowResult,
-  type ScheduleRow,
-} from '../../../lib/types';
+import { formatInZone, shiftMinutes } from '../../../lib/datetime';
+import { errorMessage } from '../../../lib/errors';
+import { downloadCsv, exportFilename, toCsv } from '../../../lib/csv';
+import { type EventSummary, type RowResult, type ScheduleRow } from '../../../lib/types';
+import { AddItemsPanel } from './AddItemsPanel';
 import {
   HiddenCell,
   NameCell,
-  RowStatusCell,
+  PlaceCell,
+  RowStatusIcons,
   TagsCell,
-  TextCell,
   TimeSlotCell,
+  UNPUBLISHED_ICON_COLOR,
+  UNSAVED_ICON_COLOR,
 } from './cells';
 import { ImportPanel } from './ImportPanel';
 import { TimeShiftBar } from './TimeShiftBar';
@@ -58,26 +77,11 @@ import { useScheduleEdits } from './useScheduleEdits';
 /** Rows per save request. Small enough to give real progress on a big edit. */
 const SAVE_CHUNK = 10;
 
-function downloadCsv(rows: ScheduleRow[], eventTitle: string) {
-  const blob = new Blob([toCsv(rows)], { type: 'text/csv;charset=utf-8' });
-  const url = URL.createObjectURL(blob);
-  const anchor = document.createElement('a');
-  anchor.href = url;
-  anchor.download = exportFilename(eventTitle);
-  anchor.click();
-  URL.revokeObjectURL(url);
-}
-
 export function ScheduleEditor({
   event,
-  canWrite,
-  onUpgrade,
   onChangeEvent,
 }: {
   event: EventSummary;
-  /** False on the free tier: reading and exporting stay available, writing doesn't. */
-  canWrite: boolean;
-  onUpgrade: () => Promise<string | null>;
   onChangeEvent: () => void;
 }) {
   const [draftNotPublished, setDraftNotPublished] = useState(false);
@@ -87,6 +91,22 @@ export function ScheduleEditor({
   const [publishPrompt, setPublishPrompt] = useState(false);
   const [publishing, setPublishing] = useState(false);
   const [showImport, setShowImport] = useState(false);
+  const [showAddItems, setShowAddItems] = useState(false);
+  const [pendingDelete, setPendingDelete] = useState<ScheduleRow[] | null>(null);
+  const [deleting, setDeleting] = useState(false);
+
+  // Mirrors the table's own selection via `onSelectedItems`, so TimeShiftBar
+  // can stay permanently rendered (never hidden) while still getting live
+  // selection — `bulkActionToolbar`'s own render prop is the only other
+  // source of live selection, but the table itself hides that slot whenever
+  // nothing's selected, which is exactly the disappearing act being fixed.
+  const [selectedRows, setSelectedRows] = useState<ScheduleRow[]>([]);
+  // `bulkActionToolbar` hands us a fresh `clearSelection` on every render;
+  // stashed here so `save()` (outside that render prop's scope) can clear the
+  // table's selection after a successful save without re-plumbing it as a
+  // prop. Calling a stale closure when nothing is selected is a harmless
+  // no-op, so no cleanup is needed when the slot stops rendering.
+  const clearSelectionRef = useRef<(() => void) | null>(null);
 
   // The rows most recently returned by the server, kept for CSV export and for
   // the import diff — both need the true server state, not the edited view.
@@ -110,13 +130,32 @@ export function ScheduleEditor({
 
   const rows = state.collection.keyedItems.map((keyed) => keyed.item);
   const edits = useScheduleEdits(rows);
-  const selected = state.collection.bulkSelect.selectedValues;
+
+  // Where a newly added item should start: 10 minutes after the last
+  // scheduled item's end, in that item's own zone. With no items yet, there's
+  // no "last one" to build on, so this falls back to the event's own start
+  // (or its zone alone, if the event's date is still TBD).
+  const nextItemDefault = (() => {
+    const lastByEnd = [...rows].sort((a, b) => Date.parse(a.end) - Date.parse(b.end)).at(-1);
+    if (lastByEnd) {
+      return {
+        start: shiftMinutes(lastByEnd.end, 10) ?? lastByEnd.end,
+        timeZoneId: lastByEnd.timeZoneId,
+      };
+    }
+    const zone = event.timeZoneId ?? 'Etc/UTC';
+    return { start: event.startDate ?? new Date().toISOString(), timeZoneId: zone };
+  })();
+
+  // Existing places across this schedule, offered as suggestions in the
+  // Place field — not a locked list, since the API has no place taxonomy of
+  // its own; just a shortcut to avoid re-typing "Main Stage" on every row.
+  const placeOptions = Array.from(
+    new Set(rows.map((row) => edits.valueOf(row).stageName).filter((place) => place !== '')),
+  ).sort((a, b) => a.localeCompare(b));
 
   const blocked = edits.errorCount > 0;
-  const busy = saving || publishing;
-  // On the free tier the grid is a viewer: cells are inert, so there is never
-  // unsaved work that can't be saved.
-  const locked = busy || !canWrite;
+  const busy = saving || publishing || deleting;
 
   /** Warns before losing unsaved edits on navigation. */
   const dirtyRef = useRef(edits.dirtyCount);
@@ -146,10 +185,7 @@ export function ScheduleEditor({
         setProgress({ done: Math.min(i + SAVE_CHUNK, pending.length), total: pending.length });
       }
     } catch (error) {
-      const message =
-        error instanceof Error && error.message
-          ? error.message
-          : 'The save could not be completed.';
+      const message = errorMessage(error, 'The save could not be completed.');
       // Earlier chunks may already have been written, so the grid must be
       // resynced rather than left showing a state the server doesn't hold.
       await state.collection.refreshAllPages();
@@ -181,6 +217,10 @@ export function ScheduleEditor({
         type: 'success',
       });
       setPublishPrompt(true);
+      // Everything just saved is already reflected in the draft — leaving
+      // rows checked (and a stale shift amount sitting in TimeShiftBar) reads
+      // as unfinished work rather than a completed save.
+      clearSelectionRef.current?.();
     } else {
       // Partial failure: never rounded up to success, and publishing is not
       // offered until the owner has dealt with the failures.
@@ -208,10 +248,7 @@ export function ScheduleEditor({
         });
       } catch (error) {
         dashboard.showToast({
-          message:
-            error instanceof Error && error.message
-              ? error.message
-              : `Could not ${action} the schedule.`,
+          message: errorMessage(error, `Could not ${action} the schedule.`),
           type: 'error',
         });
       } finally {
@@ -221,130 +258,128 @@ export function ScheduleEditor({
     [edits, event.id, state.collection],
   );
 
+  const runDelete = useCallback(async () => {
+    if (!pendingDelete || pendingDelete.length === 0) return;
+    const count = pendingDelete.length;
+    setDeleting(true);
+    try {
+      await saveSchedule(event.id, {
+        deletes: pendingDelete.map((row) => ({ id: row.id, name: row.name })),
+      });
+      await state.collection.refreshAllPages();
+      setPendingDelete(null);
+      dashboard.showToast({
+        message: `Deleted ${count} item${count === 1 ? '' : 's'} from the draft schedule.`,
+        type: 'success',
+      });
+      setPublishPrompt(true);
+    } catch (error) {
+      dashboard.showToast({
+        message: errorMessage(error, 'Could not delete the selected items.'),
+        type: 'error',
+      });
+    } finally {
+      setDeleting(false);
+    }
+  }, [pendingDelete, event.id, state.collection]);
+
   const columns: TableColumn<ScheduleRow>[] = [
     {
+      id: 'status',
+      name: 'Status',
+      title: '',
+      width: '64px',
+      hiddenFromCustomColumnsSelection: true,
+      render: (row: ScheduleRow) => (
+        <RowStatusIcons
+          dirty={edits.isDirty(row.id)}
+          unpublished={draftNotPublished}
+          errors={edits.errorsByRow.get(row.id)}
+        />
+      ),
+    },
+    {
       id: 'name',
-      name: 'Name',
-      title: 'Name',
-      width: '22%',
+      name: 'Item Name',
+      title: 'Item Name',
+      width: '26%',
       hiddenFromCustomColumnsSelection: true,
       render: (row: ScheduleRow) => (
         <NameCell
           values={edits.valueOf(row)}
           errors={edits.errorsByRow.get(row.id)}
-          disabled={locked}
+          disabled={busy}
           onChange={(value) => edits.setField(row, 'name', value)}
         />
       ),
     },
     {
       id: 'start',
-      name: 'Starts',
-      title: 'Starts',
-      width: '16%',
+      name: 'Start Date and Time',
+      title: 'Start Date and Time',
+      width: '34%',
       render: (row: ScheduleRow) => {
         const values = edits.valueOf(row);
         return (
-          <TimeSlotCell
-            iso={values.start}
-            timeZoneId={values.timeZoneId}
-            message={edits.errorsByRow.get(row.id)?.find((e) => e.field === 'start')?.message}
-            disabled={locked}
-            onChange={(iso) => edits.setField(row, 'start', iso)}
-          />
+          <Box direction="vertical" gap="SP1">
+            <TimeSlotCell
+              iso={values.start}
+              timeZoneId={values.timeZoneId}
+              message={edits.errorsByRow.get(row.id)?.find((e) => e.field === 'start')?.message}
+              disabled={busy}
+              onChange={(iso) => edits.setField(row, 'start', iso)}
+            />
+            <PlaceCell
+              value={values.stageName}
+              options={placeOptions}
+              message={
+                edits.errorsByRow.get(row.id)?.find((e) => e.field === 'stageName')?.message
+              }
+              disabled={busy}
+              onChange={(value) => edits.setField(row, 'stageName', value)}
+            />
+          </Box>
         );
       },
     },
     {
       id: 'end',
-      name: 'Ends',
-      title: 'Ends',
-      width: '16%',
+      name: 'End Date and Time',
+      title: 'End Date and Time',
+      width: '34%',
       render: (row: ScheduleRow) => {
         const values = edits.valueOf(row);
         return (
-          <TimeSlotCell
-            iso={values.end}
-            timeZoneId={values.timeZoneId}
-            message={edits.errorsByRow.get(row.id)?.find((e) => e.field === 'end')?.message}
-            disabled={locked}
-            onChange={(iso) => edits.setField(row, 'end', iso)}
-          />
+          <Box direction="vertical" gap="SP1">
+            <TimeSlotCell
+              iso={values.end}
+              timeZoneId={values.timeZoneId}
+              message={edits.errorsByRow.get(row.id)?.find((e) => e.field === 'end')?.message}
+              disabled={busy}
+              onChange={(iso) => edits.setField(row, 'end', iso)}
+            />
+            <TagsCell
+              values={values}
+              errors={edits.errorsByRow.get(row.id)}
+              disabled={busy}
+              onChange={(tags) => edits.setField(row, 'tags', tags)}
+            />
+          </Box>
         );
       },
     },
     {
-      id: 'stageName',
-      name: 'Location',
-      title: 'Location',
-      width: '12%',
-      render: (row: ScheduleRow) => (
-        <TextCell
-          value={edits.valueOf(row).stageName}
-          maxLength={LIMITS.STAGE_NAME_MAX}
-          placeholder="Stage or room"
-          message={edits.errorsByRow.get(row.id)?.find((e) => e.field === 'stageName')?.message}
-          disabled={locked}
-          onChange={(value) => edits.setField(row, 'stageName', value)}
-        />
-      ),
-    },
-    {
-      id: 'description',
-      name: 'Description',
-      title: 'Description',
-      width: '18%',
-      defaultHidden: true,
-      render: (row: ScheduleRow) => (
-        <TextCell
-          value={edits.valueOf(row).description}
-          maxLength={LIMITS.DESCRIPTION_MAX}
-          placeholder="Description"
-          message={
-            edits.errorsByRow.get(row.id)?.find((e) => e.field === 'description')?.message
-          }
-          disabled={locked}
-          onChange={(value) => edits.setField(row, 'description', value)}
-        />
-      ),
-    },
-    {
-      id: 'tags',
-      name: 'Tags',
-      title: 'Tags',
-      width: '12%',
-      render: (row: ScheduleRow) => (
-        <TagsCell
-          values={edits.valueOf(row)}
-          errors={edits.errorsByRow.get(row.id)}
-          disabled={locked}
-          onChange={(tags) => edits.setField(row, 'tags', tags)}
-        />
-      ),
-    },
-    {
       id: 'hidden',
       name: 'Hidden',
-      title: 'Hidden',
-      width: '80px',
+      title: '',
+      width: '40px',
+      hiddenFromCustomColumnsSelection: true,
       render: (row: ScheduleRow) => (
         <HiddenCell
           values={edits.valueOf(row)}
-          disabled={locked}
+          disabled={busy}
           onChange={(hidden) => edits.setField(row, 'hidden', hidden)}
         />
-      ),
-    },
-    {
-      id: 'updated',
-      name: 'Time zone',
-      title: 'Time zone',
-      width: '10%',
-      defaultHidden: true,
-      render: (row: ScheduleRow) => (
-        <Text size="tiny" secondary>
-          {row.timeZoneId}
-        </Text>
       ),
     },
   ];
@@ -356,8 +391,25 @@ export function ScheduleEditor({
         subtitle={{
           text:
             event.formattedDateAndTime ??
-            (event.startDate ? formatInZone(event.startDate, event.timeZoneId ?? 'Etc/UTC') : ''),
+            (event.startDate
+              ? formatInZone(event.startDate, event.timeZoneId ?? 'Etc/UTC', i18n.getLocale())
+              : ''),
         }}
+        primaryAction={
+          <PrimaryActions
+            label="Publish schedule"
+            prefixIcon={<Check />}
+            disabled={busy || !draftNotPublished}
+            onClick={() => runPublish('publish')}
+          />
+        }
+        secondaryActions={
+          <SecondaryActions
+            label="Discard draft changes"
+            disabled={busy || !draftNotPublished}
+            onClick={() => runPublish('discard')}
+          />
+        }
       />
       <CollectionPage.Content>
         <Box direction="vertical" gap="SP3">
@@ -417,10 +469,52 @@ export function ScheduleEditor({
             />
           ) : null}
 
+          {showAddItems ? (
+            <AddItemsPanel
+              eventId={event.id}
+              defaultStart={nextItemDefault.start}
+              defaultTimeZoneId={nextItemDefault.timeZoneId}
+              onClose={() => setShowAddItems(false)}
+              onApplied={async () => {
+                await state.collection.refreshAllPages();
+                setShowAddItems(false);
+                setPublishPrompt(true);
+              }}
+            />
+          ) : null}
+
+          {pendingDelete ? (
+            <SectionHelper appearance="danger" title={`Delete ${pendingDelete.length} item${pendingDelete.length === 1 ? '' : 's'}?`}>
+              <Box direction="vertical" gap="SP2">
+                <Text size="small">
+                  {pendingDelete.map((row) => row.name || 'Untitled item').join(', ')}
+                </Text>
+                <Box gap="SP2">
+                  <Button size="small" skin="destructive" disabled={deleting} onClick={runDelete}>
+                    {deleting ? 'Deleting…' : `Delete ${pendingDelete.length} item${pendingDelete.length === 1 ? '' : 's'}`}
+                  </Button>
+                  <Button
+                    size="small"
+                    priority="secondary"
+                    disabled={deleting}
+                    onClick={() => setPendingDelete(null)}
+                  >
+                    Cancel
+                  </Button>
+                </Box>
+              </Box>
+            </SectionHelper>
+          ) : null}
+
+          <Text size="tiny" secondary>
+            Row checkboxes choose items for bulk actions (shift times, delete) only. Every
+            unsaved edit is included when you save, whether or not its row is checked.
+          </Text>
+
           <TimeShiftBar
-            selected={selected}
-            disabled={locked}
-            onApply={(targets, change) => edits.applyToRows(targets, change)}
+            selected={selectedRows}
+            disabled={busy}
+            onApply={edits.applyToRows}
           />
 
           <Table
@@ -430,20 +524,7 @@ export function ScheduleEditor({
             internalScroll
             stickySelectionColumn
             search={false}
-            rowStatus={(keyed) => {
-              const row = keyed.item;
-              const rowErrors = edits.errorsByRow.get(row.id);
-              if (rowErrors && rowErrors.length > 0) {
-                return {
-                  status: 'error' as const,
-                  messages: rowErrors.map((e) => e.message),
-                };
-              }
-              if (edits.isDirty(row.id)) {
-                return { status: 'warning' as const, messages: ['Unsaved change'] };
-              }
-              return null;
-            }}
+            onSelectedItems={(_allSelected, items) => setSelectedRows(items)}
             topNotification={
               publishPrompt ? (
                 <TableTopNotification
@@ -451,7 +532,7 @@ export function ScheduleEditor({
                   showPrefixIcon
                   title="Saved to the draft schedule. Publish it so guests can see the changes?"
                   actionText={publishing ? 'Publishing…' : 'Publish now'}
-                  actionDisabled={publishing || !canWrite}
+                  actionDisabled={publishing}
                   onAction={() => runPublish('publish')}
                   secondaryActionProps={{
                     label: 'Keep as draft',
@@ -464,7 +545,7 @@ export function ScheduleEditor({
                   showPrefixIcon
                   title="This event has unpublished draft changes. Guests still see the previously published schedule."
                   actionText={publishing ? 'Publishing…' : 'Publish'}
-                  actionDisabled={publishing || !canWrite}
+                  actionDisabled={publishing}
                   onAction={() => runPublish('publish')}
                   secondaryActionProps={{
                     label: 'Discard draft',
@@ -478,42 +559,74 @@ export function ScheduleEditor({
                 items={[
                   {
                     label: 'Export CSV',
-                    onClick: () => downloadCsv(serverRows.current, event.title),
+                    onClick: () =>
+                      downloadCsv(toCsv(serverRows.current), exportFilename(event.title)),
                     disabled: busy,
                   },
                   {
-                    label: canWrite ? 'Import CSV' : 'Import CSV (requires purchase)',
-                    onClick: () => (canWrite ? setShowImport(true) : void onUpgrade()),
+                    label: 'Import CSV',
+                    onClick: () => setShowImport(true),
+                    disabled: busy,
+                  },
+                  {
+                    label: 'Add Schedule Item',
+                    onClick: () => setShowAddItems(true),
                     disabled: busy,
                   },
                 ]}
               />
             }
+            bulkActionToolbar={({ selectedValues, clearSelection }) => {
+              clearSelectionRef.current = clearSelection;
+              return (
+                <MultiBulkActionToolbar
+                  primaryActionItems={[
+                    {
+                      dataHook: 'save-changes',
+                      label:
+                        edits.dirtyCount > 0
+                          ? `Save ${edits.dirtyCount} change${edits.dirtyCount === 1 ? '' : 's'} as draft`
+                          : 'Save draft',
+                      prefixIcon: <Check />,
+                      disabled: busy || blocked || edits.dirtyCount === 0,
+                      onClick: () => save(),
+                    },
+                    {
+                      dataHook: 'delete-selected',
+                      label: `Delete ${selectedValues.length} selected`,
+                      prefixIcon: <Delete />,
+                      disabled: busy,
+                      onClick: () => setPendingDelete(selectedValues),
+                    },
+                  ]}
+                />
+              );
+            }}
             primaryActionButton={
               <PrimaryActionButton
-                onClick={canWrite ? save : () => void onUpgrade()}
-                disabled={canWrite && (busy || blocked || edits.dirtyCount === 0)}
+                onClick={save}
+                disabled={busy || blocked || edits.dirtyCount === 0}
               >
-                {!canWrite
-                  ? 'Buy to unlock saving'
-                  : progress
-                    ? `Saving ${progress.done} of ${progress.total}…`
-                    : edits.dirtyCount > 0
-                      ? `Save ${edits.dirtyCount} change${edits.dirtyCount === 1 ? '' : 's'}`
-                      : 'Save changes'}
+                {progress
+                  ? `Saving ${progress.done} of ${progress.total}…`
+                  : edits.dirtyCount > 0
+                    ? `Save ${edits.dirtyCount} change${edits.dirtyCount === 1 ? '' : 's'} as draft`
+                    : 'Save draft'}
               </PrimaryActionButton>
             }
             emptyState={
               <CollectionEmptyState
                 title="This event has no schedule items yet"
-                subtitle="Add items in Wix Events, or import a CSV to build the schedule in bulk."
+                subtitle="Add items here, or import a CSV to build the schedule in bulk."
               >
-                <Button
-                  size="small"
-                  onClick={() => (canWrite ? setShowImport(true) : void onUpgrade())}
-                >
-                  {canWrite ? 'Import CSV' : 'Buy to unlock importing'}
-                </Button>
+                <Box gap="SP2">
+                  <Button size="small" onClick={() => setShowAddItems(true)}>
+                    Add Schedule Item
+                  </Button>
+                  <Button size="small" priority="secondary" onClick={() => setShowImport(true)}>
+                    Import CSV
+                  </Button>
+                </Box>
               </CollectionEmptyState>
             }
             errorState={(_error, { retry }) => (
@@ -527,6 +640,21 @@ export function ScheduleEditor({
               </CollectionEmptyState>
             )}
           />
+
+          <Box gap="SP4" verticalAlign="middle">
+            <Box gap="SP1" verticalAlign="middle">
+              <Unsaved size="16px" color={UNSAVED_ICON_COLOR} />
+              <Text size="tiny" secondary>
+                Unsaved changes: edited, not yet saved to the draft
+              </Text>
+            </Box>
+            <Box gap="SP1" verticalAlign="middle">
+              <Publish size="16px" color={UNPUBLISHED_ICON_COLOR} />
+              <Text size="tiny" secondary>
+                Unpublished changes: saved to the draft, not yet visible to guests
+              </Text>
+            </Box>
+          </Box>
         </Box>
       </CollectionPage.Content>
     </CollectionPage>

@@ -17,7 +17,18 @@ export interface WallTime {
 
 const MINUTE_MS = 60_000;
 
-/** Formats an instant as wall-clock parts in the given zone. */
+/**
+ * Formats an instant as wall-clock parts in the given zone.
+ *
+ * `'en-US'` here is deliberate, not a stray hardcoded locale to fix: this
+ * reads back *numeric digits* (`Number(found.value)`), not display text, and
+ * this file is imported by backend code too (`validation.ts` → here, reached
+ * from `schedule.web.ts`) where the dashboard's `i18n` SDK module isn't
+ * available anyway. A locale using non-Latin digits would break the
+ * `Number()` parse below, so this stays fixed regardless. User-facing date
+ * and time *display* is what follows the dashboard user's locale — see
+ * `formatInZone` below and `cells.tsx`'s `i18n.getLocale()` usage.
+ */
 export function toWallTime(iso: string, timeZoneId: string): WallTime | null {
   const ms = Date.parse(iso);
   if (Number.isNaN(ms)) return null;
@@ -128,12 +139,21 @@ export function fromInputStrings(
   );
 }
 
-/** Human-readable wall time in the item's zone, for read-only display. */
-export function formatInZone(iso: string, timeZoneId: string): string {
+/**
+ * Human-readable wall time in the item's zone, for read-only display.
+ *
+ * `locale` is left to the caller rather than read here via `i18n.getLocale()`
+ * (the dashboard user's Language & Region preference): this file is shared
+ * with backend code (`validation.ts` → here, reached from `schedule.web.ts`),
+ * where that frontend-only SDK module isn't available. Frontend callers pass
+ * `i18n.getLocale()` explicitly; omitting it falls back to the runtime's own
+ * default, same as before this was made overridable.
+ */
+export function formatInZone(iso: string, timeZoneId: string, locale?: string): string {
   const ms = Date.parse(iso);
   if (Number.isNaN(ms)) return '—';
   try {
-    return new Intl.DateTimeFormat(undefined, {
+    return new Intl.DateTimeFormat(locale, {
       timeZone: timeZoneId,
       dateStyle: 'medium',
       timeStyle: 'short',

@@ -10,7 +10,6 @@
 
 import { schedule } from '@wix/events';
 import { auth } from '@wix/essentials';
-import { toFieldMask } from './diff';
 import {
   DELETE_BATCH_SIZE,
   LIST_PAGE_SIZE,
@@ -23,12 +22,25 @@ import {
 } from './types';
 
 /**
- * Every state, explicitly.
+ * The states that show every item exactly once, at its current draft value.
  *
- * The API defaults to ["PUBLISHED", "VISIBLE"], which would silently omit
- * draft and hidden items — exactly the items a bulk editor must show.
+ * `state` has two independent axes — revision (DRAFT/PUBLISHED) and
+ * visibility (VISIBLE/HIDDEN) — confirmed on ListScheduleItems' own docs:
+ * omitting one axis makes the API assume a default for it, e.g. `["HIDDEN"]`
+ * becomes `["HIDDEN", "PUBLISHED"]`. Naming values from *both* axes, as this
+ * app once did with `["DRAFT", "PUBLISHED", "VISIBLE", "HIDDEN"]`, asks for
+ * the cross product: an item with unpublished changes comes back twice, once
+ * per revision, with different field values but the same ID — which is what
+ * caused both the duplicate-row bug and, worse, a save that looked reverted
+ * (a later fetch's arbitrary tie-break sometimes kept the stale published
+ * copy over the fresh draft one). Every item has a draft revision whether or
+ * not it's been edited — "each event has one published schedule and one
+ * draft schedule" — so naming only `DRAFT` for the revision axis, plus both
+ * visibility values, returns each item exactly once, always at its current
+ * (possibly-edited) draft value — which is what a draft-schedule editor
+ * should show and write to.
  */
-const ALL_STATES = ['DRAFT', 'PUBLISHED', 'VISIBLE', 'HIDDEN'] as const;
+const ALL_STATES = ['DRAFT', 'VISIBLE', 'HIDDEN'] as const;
 
 /** How many writes to have in flight at once. */
 const WRITE_CONCURRENCY = 5;
@@ -96,11 +108,18 @@ function toItemData(fields: ScheduleRowFields): schedule.ScheduleItemData {
  *
  * A 100-item event sits exactly at the single-call ceiling, so the loop is
  * required rather than defensive.
+ *
+ * Deduping by ID is now a safety net rather than the fix: `ALL_STATES` is
+ * chosen (see its own comment) so each item is returned exactly once, but
+ * keeping the dedup means a future change to that list fails toward "some
+ * rows silently coalesce" instead of "the grid (and edits, which are keyed by
+ * ID) doubles up every row again."
  */
 export async function readSchedule(eventId: string): Promise<ScheduleSnapshot> {
-  const rows: ScheduleRow[] = [];
+  const byId = new Map<string, ScheduleRow>();
   let offset = 0;
   let draftNotPublished = false;
+  let fetched = 0;
 
   for (;;) {
     const response = await withRetry(() =>
@@ -112,14 +131,16 @@ export async function readSchedule(eventId: string): Promise<ScheduleSnapshot> {
     );
 
     const items = response.items ?? [];
-    rows.push(...items.map(toRow));
+    for (const item of items.map(toRow)) byId.set(item.id, item);
+    fetched += items.length;
     draftNotPublished = draftNotPublished || response.draftNotPublished === true;
 
-    const total = response.pagingMetadata?.total ?? response.total ?? rows.length;
+    const total = response.pagingMetadata?.total ?? response.total ?? fetched;
     offset += items.length;
-    if (items.length === 0 || rows.length >= total) break;
+    if (items.length === 0 || fetched >= total) break;
   }
 
+  const rows = [...byId.values()];
   rows.sort((a, b) => Date.parse(a.start) - Date.parse(b.start));
   return { rows, draftNotPublished };
 }
@@ -234,13 +255,17 @@ export async function writeSchedule(
   const updateTasks = (spec.updates ?? []).map(
     (update) => async (): Promise<RowResult> => {
       try {
-        // Signature is (itemId, eventId, options) — item first.
-        await withRetry(() =>
-          elevated.update(update.id, eventId, {
-            item: toItemData(update.next),
-            fields: toFieldMask(update.fields),
-          }),
-        );
+        // No field mask: the API rejects every value tried here (a bare
+        // `timeSlot`, dotted `timeSlot.start`, even a plain top-level `name`)
+        // with the same "Invalid field mask" error, so partial updates via
+        // `fields` appear broken on this endpoint regardless of path syntax.
+        // An empty/omitted mask is documented as "interpreted as full
+        // update," which works. `update.next` already carries this row's
+        // complete current field set (baseline merged with edits), so a full
+        // replace is safe under normal use — the one trade-off is that a
+        // change made by someone else between this row's load and this save
+        // could be overwritten, which the field mask would have prevented.
+        await withRetry(() => elevated.update(update.id, eventId, { item: toItemData(update.next) }));
         return { rowId: update.id, name: update.next.name, ok: true, operation: 'update' };
       } catch (error) {
         return {

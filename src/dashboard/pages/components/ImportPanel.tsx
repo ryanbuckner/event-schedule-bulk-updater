@@ -11,7 +11,14 @@ import { dashboard } from '@wix/dashboard';
 import { Box, Button, Card, SectionHelper, Text, TextButton } from '@wix/design-system';
 import React, { useState } from 'react';
 import { getSchedule, saveSchedule } from '../../../backend/api/schedule.web';
-import { CsvFormatError, planImport } from '../../../lib/csv';
+import {
+  CsvFormatError,
+  downloadCsv,
+  IMPORT_TEMPLATE_FILENAME,
+  planImport,
+  templateCsv,
+} from '../../../lib/csv';
+import { errorMessage } from '../../../lib/errors';
 import type { ImportPlan, RowResult } from '../../../lib/types';
 
 const COMMIT_CHUNK = 10;
@@ -49,9 +56,7 @@ export function ImportPanel({
       setFormatError(
         error instanceof CsvFormatError
           ? error.message
-          : error instanceof Error && error.message
-            ? error.message
-            : "That file couldn't be read as CSV.",
+          : errorMessage(error, "That file couldn't be read as CSV."),
       );
     } finally {
       setPlanning(false);
@@ -84,10 +89,7 @@ export function ImportPanel({
       }
     } catch (error) {
       dashboard.showToast({
-        message:
-          error instanceof Error && error.message
-            ? error.message
-            : 'The import could not be completed.',
+        message: errorMessage(error, 'The import could not be completed.'),
         type: 'error',
       });
       setCommitting(false);
@@ -127,6 +129,25 @@ export function ImportPanel({
       />
       <Card.Content>
         <Box direction="vertical" gap="SP3">
+          <Box direction="vertical" gap="SP1">
+            <Text size="small">
+              Keep a row's ID to update that item, or leave the ID blank to add a new one. Any
+              item not in the file is deleted from the draft, so start from a full export if
+              you're only changing a few rows.
+            </Text>
+            <Text size="small">
+              Start Date, Start Time, End Date, and End Time are read as local wall-clock values
+              in that row's own Time Zone column, not UTC. Separate multiple tags with a
+              semicolon (;).
+            </Text>
+            <TextButton
+              size="small"
+              onClick={() => downloadCsv(templateCsv(), IMPORT_TEMPLATE_FILENAME)}
+            >
+              Download a template
+            </TextButton>
+          </Box>
+
           <input
             type="file"
             accept=".csv,text/csv"

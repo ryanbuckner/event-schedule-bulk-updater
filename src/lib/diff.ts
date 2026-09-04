@@ -1,10 +1,12 @@
 /**
  * Change detection between the loaded server state and the user's edits.
  *
- * Two jobs: decide which rows need a write at all, and for each of those,
- * which fields to name in the update's field mask. Sending only changed
- * fields is what keeps this app from clobbering schedule-item fields it
- * doesn't model.
+ * Decides which rows need a write at all, and which fields changed on each.
+ * The Schedule Items API's `fields` (field mask) parameter rejects every
+ * value tried against it — a bare `timeSlot`, a dotted `timeSlot.start`,
+ * even a plain top-level `name` — with the same "Invalid field mask" error,
+ * so `schedule-client.ts` sends full updates instead and doesn't use a mask
+ * built from the changed-fields list here.
  */
 
 import { EDITABLE_FIELDS, type EditableField, type ScheduleRowFields } from './types';
@@ -37,24 +39,6 @@ export function changedFields(
   after: ScheduleRowFields,
 ): EditableField[] {
   return EDITABLE_FIELDS.filter((field) => fieldChanged(field, before, after));
-}
-
-/**
- * Builds the field mask for an update call.
- *
- * `timeSlot` is a single nested object on the server, so a change to start,
- * end, or the zone is expressed as one `timeSlot` path rather than three.
- */
-export function toFieldMask(fields: EditableField[]): string[] {
-  const paths = new Set<string>();
-  for (const field of fields) {
-    if (field === 'start' || field === 'end' || field === 'timeZoneId') {
-      paths.add('timeSlot');
-    } else {
-      paths.add(field);
-    }
-  }
-  return [...paths];
 }
 
 export interface PendingUpdate {

@@ -32,6 +32,7 @@ function toSummary(event: wixEventsV2.Event): EventSummary {
       settings?.formatted?.dateAndTime ??
       (settings?.dateAndTimeTbd ? settings.dateAndTimeTbdMessage ?? 'Date TBD' : null),
     agendaEnabled: event.agendaSettings?.enabled ?? false,
+    recurring: (settings?.recurrenceStatus ?? 'ONE_TIME') !== 'ONE_TIME',
   };
 }
 

@@ -10,7 +10,6 @@
  */
 
 import { Permissions, webMethod } from '@wix/web-methods';
-import { resolveEntitlement } from '../../lib/entitlement';
 import { getEventSummary, listEventsForPicker } from '../../lib/events-client';
 import {
   discardSchedule,
@@ -28,29 +27,6 @@ import {
   type ScheduleRowFields,
 } from '../../lib/types';
 import { validateRow } from '../../lib/validation';
-
-/** Raised when the instance hasn't purchased the write capability. */
-export class PurchaseRequired extends Error {
-  constructor() {
-    super(
-      'Saving schedule changes requires a one-time purchase of this app. Viewing ' +
-        'and exporting your schedule stay free.',
-    );
-    this.name = 'PurchaseRequired';
-  }
-}
-
-/**
- * Blocks writes on the free tier.
- *
- * The grid disables its own write controls, but that is only feedback — this is
- * the check that actually holds, because anything decided in the browser can be
- * edited away in devtools.
- */
-async function requireWriteAccess(): Promise<void> {
-  const entitlement = await resolveEntitlement();
-  if (entitlement.state !== 'PAID') throw new PurchaseRequired();
-}
 
 /** Raised when a request is rejected before anything is written. */
 export class ValidationFailure extends Error {
@@ -104,7 +80,6 @@ export const saveSchedule = webMethod(
   Permissions.Admin,
   async (eventId: string, payload: SavePayload): Promise<SaveOutcome & { noop?: boolean }> => {
     if (!eventId) throw new Error('An event ID is required.');
-    await requireWriteAccess();
 
     const problems: string[] = [];
     const updates: UpdateSpec[] = [];
@@ -163,7 +138,6 @@ export const setScheduleVisibility = webMethod(
   Permissions.Admin,
   async (eventId: string, action: 'publish' | 'discard'): Promise<void> => {
     if (!eventId) throw new Error('An event ID is required.');
-    await requireWriteAccess();
     if (action === 'publish') await publishSchedule(eventId);
     else if (action === 'discard') await discardSchedule(eventId);
     else throw new Error("The action must be either 'publish' or 'discard'.");

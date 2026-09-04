@@ -113,30 +113,13 @@ export interface EventSummary {
   formattedDateAndTime: string | null;
   /** Whether the event has its schedule feature enabled. */
   agendaEnabled: boolean;
-}
-
-/**
- * Result of the purchase check.
- *
- * Freemium is by capability, not by time: `FREE` can read and export, `PAID`
- * can also write. There is no trial state because a one-time plan gives no
- * reachable per-instance install date to anchor a trial clock to.
- */
-export type EntitlementState = 'FREE' | 'PAID';
-
-export interface Entitlement {
-  state: EntitlementState;
   /**
-   * True when the check could not be completed and the app fell back to the
-   * free tier. Surfaced so a failure is never silent, and so a paying owner
-   * isn't told to buy something they already own.
+   * Whether this event is one occurrence of a recurring series, from
+   * `dateAndTimeSettings.recurrenceStatus`. Not filterable server-side (the
+   * SDK's query builder has no such field), so the picker filters on this
+   * client-side against the already-fetched list.
    */
-  degraded: boolean;
-}
-
-/** Whether this entitlement permits changing a schedule. */
-export function canWrite(entitlement: Entitlement): boolean {
-  return entitlement.state === 'PAID';
+  recurring: boolean;
 }
 
 /** The plan produced by diffing an imported CSV against live server state. */

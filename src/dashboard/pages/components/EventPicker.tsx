@@ -7,22 +7,80 @@
  * Ordering is decided by the backend (upcoming soonest-first, then past
  * most-recent-first) and preserved here, so the event the owner most likely
  * wants is at the top.
+ *
+ * Status and Event type are filtered client-side against the already-fetched
+ * list, not passed to the backend query: the Events V2 SDK's query builder is
+ * type-constrained to a fixed set of filterable fields (`_id`, `title`,
+ * `status`, `dateAndTimeSettings.startDate`/`endDate`, `slug`, `_createdDate`,
+ * `_updatedDate`, `registration.initialType`, `userId`) that doesn't include
+ * `dateAndTimeSettings.recurrenceStatus` — so "Recurring/Single" can only be
+ * filtered here, after the fact, on data already in memory. Event category
+ * isn't offered as a filter at all: the SDK has no category field on Event
+ * and no bulk "events in category X" lookup, only a per-event
+ * `listEventCategories(eventId)` call — filtering by category would mean one
+ * extra API call per event on the page.
+ *
+ * Wrapped in `observer()`: `@wix/patterns`' collection state is MobX
+ * observable under the hood, and `Table` reads it reactively internally —
+ * but this component also reads `collection.keyedItems.length` directly (for
+ * the "Events (N)" title), and a plain function component doesn't subscribe
+ * to MobX observables just by reading them. Without `observer()`, that read
+ * freezes at whatever it was on the very first render (0, before the fetch
+ * resolves) and never updates, even though the table itself renders live data
+ * correctly. This is Wix's own documented fix for reading collection state
+ * outside of a library-owned render.
  */
 
 import { Badge, Box, Button, Text } from '@wix/design-system';
+import { i18n } from '@wix/essentials';
 import {
   CollectionEmptyState,
+  CollectionToolbarFilters,
+  RadioGroupFilter,
   Table,
+  ToolbarTitle,
+  idNameArrayFilter,
   useTableCollection,
+  type Filter,
   type TableColumn,
 } from '@wix/patterns';
 import { CollectionPage } from '@wix/patterns/page';
+import { observer } from 'mobx-react-lite';
 import React from 'react';
 import { listEvents } from '../../../backend/api/schedule.web';
 import { formatInZone } from '../../../lib/datetime';
 import type { EventSummary } from '../../../lib/types';
 
-const PAST_STATUSES = new Set(['ENDED', 'CANCELED']);
+interface FilterOption {
+  id: string;
+  name: string;
+}
+
+// No explicit "All" entry: `RadioGroupFilter` already renders its own
+// built-in option for "nothing selected," and a manual one here just
+// duplicated it. Unselected already means unfiltered below.
+const STATUS_OPTIONS: FilterOption[] = [
+  { id: 'UPCOMING', name: 'Upcoming' },
+  { id: 'PAST', name: 'Past' },
+  { id: 'CANCELED', name: 'Canceled' },
+];
+
+const TYPE_OPTIONS: FilterOption[] = [
+  { id: 'RECURRING', name: 'Recurring' },
+  { id: 'SINGLE', name: 'Single' },
+];
+
+/** Which Status filter bucket an event's raw status falls into. */
+function statusBucket(status: EventSummary['status']): 'UPCOMING' | 'PAST' | 'CANCELED' {
+  if (status === 'CANCELED') return 'CANCELED';
+  if (status === 'ENDED') return 'PAST';
+  return 'UPCOMING'; // UPCOMING, STARTED, DRAFT
+}
+
+type EventPickerFilters = {
+  status: Filter<FilterOption[]>;
+  type: Filter<FilterOption[]>;
+};
 
 function statusBadge(status: EventSummary['status']) {
   switch (status) {
@@ -39,22 +97,44 @@ function statusBadge(status: EventSummary['status']) {
   }
 }
 
-export function EventPicker({ onSelect }: { onSelect: (event: EventSummary) => void }) {
-  const state = useTableCollection<EventSummary, {}>({
+export const EventPicker = observer(function EventPicker({
+  onSelect,
+}: {
+  onSelect: (event: EventSummary) => void;
+}) {
+  const state = useTableCollection<EventSummary, EventPickerFilters>({
     queryName: 'schedule-events',
     paginationMode: 'offset',
     itemKey: (item) => item.id,
     itemName: (item) => item.title,
-    filters: {},
+    filters: {
+      // Defaulted to Upcoming on load (`initialValue`), but "Clear all" empties
+      // it rather than resetting back to Upcoming — no `defaultValue` is set,
+      // so clearing lands on unfiltered, matching what "Clear all" means
+      // everywhere else in Wix.
+      status: idNameArrayFilter({ initialValue: [STATUS_OPTIONS[0]] }),
+      type: idNameArrayFilter(),
+    },
     fetchData: async (query) => {
       const events = await listEvents();
       const term = (query.search ?? '').trim().toLowerCase();
-      const matching = term
-        ? events.filter((event) => event.title.toLowerCase().includes(term))
-        : events;
+      let matching = term ? events.filter((event) => event.title.toLowerCase().includes(term)) : events;
+
+      const statusValue = query.filters.status?.[0]?.id;
+      if (statusValue) {
+        matching = matching.filter((event) => statusBucket(event.status) === statusValue);
+      }
+
+      const typeValue = query.filters.type?.[0]?.id;
+      if (typeValue) {
+        matching = matching.filter((event) => event.recurring === (typeValue === 'RECURRING'));
+      }
+
       return { items: matching, total: matching.length };
     },
   });
+
+  const collection = state.collection;
 
   const columns: TableColumn<EventSummary>[] = [
     {
@@ -84,7 +164,7 @@ export function EventPicker({ onSelect }: { onSelect: (event: EventSummary) => v
         <Text size="small" secondary>
           {event.formattedDateAndTime ??
             (event.startDate
-              ? formatInZone(event.startDate, event.timeZoneId ?? 'Etc/UTC')
+              ? formatInZone(event.startDate, event.timeZoneId ?? 'Etc/UTC', i18n.getLocale())
               : 'Date TBD')}
         </Text>
       ),
@@ -121,10 +201,25 @@ export function EventPicker({ onSelect }: { onSelect: (event: EventSummary) => v
         <Table
           state={state}
           columns={columns}
+          title={<ToolbarTitle title={`Events (${collection.keyedItems.length})`} />}
           onRowClick={(event) => onSelect(event)}
+          filters={
+            <CollectionToolbarFilters inline={0} panelTitle="Filter events">
+              <RadioGroupFilter
+                filter={collection.filters.status!}
+                data={STATUS_OPTIONS}
+                accordionItemProps={{ label: 'Status' }}
+              />
+              <RadioGroupFilter
+                filter={collection.filters.type!}
+                data={TYPE_OPTIONS}
+                accordionItemProps={{ label: 'Event type' }}
+              />
+            </CollectionToolbarFilters>
+          }
           rowStatus={(keyed) => {
             const event = keyed.item;
-            return PAST_STATUSES.has(event.status)
+            return statusBucket(event.status) !== 'UPCOMING'
               ? { status: 'warning' as const, messages: ['This event has already finished.'] }
               : null;
           }}
@@ -148,4 +243,4 @@ export function EventPicker({ onSelect }: { onSelect: (event: EventSummary) => v
       </CollectionPage.Content>
     </CollectionPage>
   );
-}
+});
