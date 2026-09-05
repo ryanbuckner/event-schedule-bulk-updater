@@ -571,6 +571,7 @@ export function ScheduleEditor({
                 defaultTimeZoneId={nextItemDefault.timeZoneId}
                 placeOptions={placeOptions}
                 onClose={() => setShowAddItems(false)}
+                onRefresh={() => state.collection.refreshAllPages()}
                 onApplied={async () => {
                   await state.collection.refreshAllPages();
                   setShowAddItems(false);

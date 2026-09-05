@@ -47,6 +47,7 @@ export function AddItemsPanel({
   defaultTimeZoneId,
   placeOptions,
   onClose,
+  onRefresh,
   onApplied,
 }: {
   eventId: string;
@@ -56,6 +57,11 @@ export function AddItemsPanel({
   /** Existing places across this schedule, offered as Place suggestions — same list the grid uses. */
   placeOptions: string[];
   onClose: () => void;
+  /** Refreshes the grid's data without closing this panel — called after every
+   * commit attempt, since a partial failure can still mean some creates
+   * landed in the draft schedule and the grid needs to catch up. */
+  onRefresh: () => Promise<void> | void;
+  /** Everything succeeded: closes the panel and offers to publish. */
   onApplied: () => Promise<void> | void;
 }) {
   const [drafts, setDrafts] = useState<ScheduleRowFields[]>([
@@ -112,6 +118,14 @@ export function AddItemsPanel({
       const outcome = await saveSchedule(eventId, { creates: drafts });
       const failed = outcome.results.filter((result) => !result.ok);
       setFailures(failed);
+      // Results are positionally aligned with `drafts` (creates preserve
+      // order end to end, and a request only reaches the server at all once
+      // every row has passed validation) — index, not rowId, is what
+      // reliably ties a result back to its draft, since a successful
+      // create's rowId is the new server-assigned id, not `new-<index>`.
+      // Drop the ones that succeeded; only failures stay in the form to fix
+      // and retry, so retrying never recreates something already saved.
+      setDrafts((previous) => previous.filter((_, index) => !outcome.results[index]?.ok));
       if (failed.length === 0) {
         dashboard.showToast({
           message: `Added ${outcome.results.length} item${outcome.results.length === 1 ? '' : 's'} to the draft schedule.`,
@@ -119,10 +133,14 @@ export function AddItemsPanel({
         });
         await onApplied();
       } else {
+        // Some creates may still have landed before the rest failed, so the
+        // grid needs to catch up even though the panel stays open for the
+        // user to see and retry what didn't.
         dashboard.showToast({
           message: `${outcome.results.length - failed.length} added, ${failed.length} failed.`,
           type: 'error',
         });
+        await onRefresh();
       }
     } catch (error) {
       dashboard.showToast({

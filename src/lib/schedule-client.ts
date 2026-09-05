@@ -42,8 +42,14 @@ import {
  */
 const ALL_STATES = ['DRAFT', 'VISIBLE', 'HIDDEN'] as const;
 
-/** How many writes to have in flight at once. */
-const WRITE_CONCURRENCY = 5;
+/**
+ * How many writes to have in flight at once. Lowered from 5 after a
+ * real-world burst of 26 concurrent creates (one large Add Schedule Item
+ * batch) produced 21 generic "System error occurred" failures — a smaller
+ * burst is less likely to trip whatever's overloaded on the API side in the
+ * first place, on top of the broadened retry classification above.
+ */
+const WRITE_CONCURRENCY = 3;
 
 /**
  * Retries per write, for transient failures only.
@@ -184,7 +190,13 @@ function isTransient(error: unknown): boolean {
   if (/RESOURCE_EXHAUSTED|UNAVAILABLE|DEADLINE_EXCEEDED|ETIMEDOUT|ECONNRESET/i.test(code)) {
     return true;
   }
-  return /rate limit|too many requests|timed? ?out|temporarily unavailable/i.test(
+  // "System error occurred" is the Events API's own generic internal-error
+  // message (confirmed against a real failure: a burst of 21 concurrent
+  // creates in one Add Schedule Item batch, all failing with this exact
+  // text and no numeric status this function could otherwise catch) — a
+  // transient overload under load, not a validation failure, so it belongs
+  // here alongside the rate-limit/timeout wording.
+  return /rate limit|too many requests|timed? ?out|temporarily unavailable|system error/i.test(
     candidate.message ?? '',
   );
 }
