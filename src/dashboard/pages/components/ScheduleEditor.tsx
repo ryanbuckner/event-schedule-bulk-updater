@@ -436,12 +436,13 @@ export function ScheduleEditor({
           <Breadcrumbs
             activeId="schedule"
             items={[
-              { id: 'events', value: 'Events' },
+              { id: 'events', value: 'Bulk Events' },
               { id: 'event', value: event.title },
               { id: 'schedule', value: 'Schedule' },
             ]}
             onClick={(item) => {
-              // Only "Events" actually goes anywhere — the event name and
+              // Only "Bulk Events" (named to avoid reading as the native Wix
+              // Events dashboard) actually goes anywhere — the event name and
               // "Schedule" are just context for where you are, same as the
               // rest of this trail can't link into Wix's own native Events
               // app pages (its own breadcrumb, e.g. Features), which this
