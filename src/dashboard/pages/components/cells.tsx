@@ -156,10 +156,21 @@ function TimeOfDaySelect({
   // Resets the local typing buffer when the committed value changes from
   // outside (e.g. a bulk time shift, or a reload) — a deliberate state
   // adjustment during render, not an effect, so it never lags a frame behind.
+  //
+  // Only reformats when the current buffer doesn't already represent the new
+  // value: typing a complete time (e.g. "9:30") commits immediately, which
+  // brings the external `value` prop back around to equal what was just
+  // typed — reformatting on that same round trip (e.g. to "9:30 AM")
+  // overwrites the field out from under the user's own cursor mid-entry.
+  // Skipping the resync when `text` already parses to the same value leaves
+  // what they typed alone; a genuinely external change (where `text` won't
+  // parse to match) still resyncs normally.
   const lastValue = useRef(value);
   if (lastValue.current !== value) {
     lastValue.current = value;
-    setText(value ? formatTimeOfDay(value, locale) : '');
+    if (parseTimeOfDay(text) !== value) {
+      setText(value ? formatTimeOfDay(value, locale) : '');
+    }
   }
 
   const invalid = text.trim() !== '' && parseTimeOfDay(text) === null;
