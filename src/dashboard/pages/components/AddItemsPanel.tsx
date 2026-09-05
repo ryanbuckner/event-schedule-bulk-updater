@@ -71,12 +71,13 @@ export function AddItemsPanel({
 
   const addRow = () =>
     setDrafts((previous) => {
-      // Each new item defaults 10 minutes after the previous one — whether
-      // "previous" is a real scheduled item (the initial default) or just the
-      // row drafted right before it, so adding several in a row lines them up
-      // back to back without retyping times.
+      // A new draft row starts exactly where the previous *draft* row ends,
+      // so several items added in a row sit back to back with no gap. (The
+      // very first draft is the exception — its start comes from
+      // `defaultStart`, which already carries a 10-minute gap after the last
+      // real scheduled item.)
       const last = previous[previous.length - 1];
-      const nextStart = last ? (shiftMinutes(last.end, 10) ?? last.end) : defaultStart;
+      const nextStart = last ? last.end : defaultStart;
       const zone = last ? last.timeZoneId : defaultTimeZoneId;
       return [...previous, blankRow(nextStart, zone)];
     });

@@ -115,19 +115,6 @@ function toDatePickerLocale(locale: string): SupportedWixLocales {
   return 'en';
 }
 
-/** Nearest 10-minute option's id for a given 24-hour `HH:MM`; exact ties (:x5) round down. */
-function nearestTimeOptionId(hhmm24: string): string | undefined {
-  const match = /^(\d{2}):(\d{2})$/.exec(hhmm24);
-  if (!match) return undefined;
-  const totalMinutes = Number(match[1]) * 60 + Number(match[2]);
-  const remainder = totalMinutes % 10;
-  const rounded =
-    remainder <= 5 ? totalMinutes - remainder : totalMinutes + (10 - remainder);
-  const clamped = Math.min(Math.max(rounded, 0), 24 * 60 - 10);
-  const pad = (n: number) => String(n).padStart(2, '0');
-  return `${pad(Math.floor(clamped / 60))}:${pad(clamped % 60)}`;
-}
-
 /** Widest option ("12:50 PM") plus breathing room. */
 const TIME_SELECT_WIDTH = '92px';
 
@@ -185,7 +172,12 @@ function TimeOfDaySelect({
         menuArrow={false}
         dropdownWidth="160px"
         minWidthPixels="160"
-        focusOnOption={nearestTimeOptionId(value)}
+        // No `focusOnOption`: pre-highlighting the nearest 10-minute preset
+        // meant Tab (the dropdown's "select the hovered option" shortcut)
+        // silently overwrote a typed custom value like "10:45 PM" with the
+        // nearest preset the instant you tabbed away. Arrow-key navigation
+        // still highlights and selects presets normally; this only drops the
+        // *automatic* highlight that fired without the user asking for it.
         popoverProps={{ appendTo: 'window' }}
         status={invalid ? 'error' : undefined}
         statusMessage={invalid ? 'Enter a time like 9:30 AM or 14:30.' : undefined}
