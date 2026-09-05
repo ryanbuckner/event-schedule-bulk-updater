@@ -200,41 +200,25 @@ function TimeOfDaySelect({
         // there's no reliable way to tell "Tab silently confirming the
         // highlight" apart from "a deliberate click" from inside `onSelect`
         // (see the git history on this file — an attempt at that broke every
-        // click). Scroll-to-current-time is instead done directly via
-        // `onFocus` below, by finding the option's own DOM node and calling
-        // `scrollIntoView` on it — this never touches the dropdown's hover
-        // or selection state, so it can't reintroduce that bug.
+        // click).
+        //
+        // `selectedId` + `focusOnSelectedOption` is a different, separate
+        // mechanism the dropdown exposes: it scrolls to the matching option
+        // by directly computing `scrollTop` from that option's own
+        // `offsetTop` in `componentDidMount` — it never touches `hovered`,
+        // so it can't feed the Tab/Enter "select the hovered option"
+        // shortcut. Verified in an isolated harness against the real
+        // package before shipping this: scrolls fresh on every open
+        // (including after the value changes), a typed custom value
+        // survives Tab untouched, and clicking a different option still
+        // works. (An earlier manual `onFocus` + DOM `scrollIntoView`
+        // attempt didn't work reliably; this uses the dropdown's own
+        // built-in scroll-to-selected path instead of reimplementing it.)
+        selectedId={nearestTimeOptionId(value)}
+        focusOnSelectedOption
         popoverProps={{ appendTo: 'window' }}
         status={invalid ? 'error' : undefined}
         statusMessage={invalid ? 'Enter a time like 9:30 AM or 14:30.' : undefined}
-        onFocus={(event) => {
-          const targetId = nearestTimeOptionId(value);
-          if (!targetId) return;
-          // Read *this* field's listbox id immediately, synchronously, off
-          // the actual focus event target — not off `document.activeElement`
-          // later, inside the delayed callback below, since a popover
-          // opening can shift focus onto its own content in the meantime and
-          // leave `document.activeElement` pointing somewhere else by then.
-          // `aria-controls` is how the library itself links an input to its
-          // listbox; scoping the search to it (rather than a document-wide
-          // query) matters because the grid can have many of these fields.
-          const listboxId = event.target.getAttribute('aria-controls');
-          if (!listboxId) return;
-          // The dropdown's option list doesn't exist in the DOM yet on this
-          // same tick (it mounts from a state update `onFocus` triggers
-          // internally, then gets positioned) — two frames gives both the
-          // mount and the popover's own layout pass time to land before
-          // searching for the option to scroll to. `:` in the id needs no
-          // escaping inside a quoted attribute-value selector.
-          requestAnimationFrame(() => {
-            requestAnimationFrame(() => {
-              document
-                .getElementById(listboxId)
-                ?.querySelector(`[data-hook="dropdown-item-${targetId}"]`)
-                ?.scrollIntoView({ block: 'center' });
-            });
-          });
-        }}
         onChange={(event) => {
           const typed = event.target.value;
           setText(typed);
