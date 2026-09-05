@@ -125,6 +125,18 @@ function toDatePickerLocale(locale: string): SupportedWixLocales {
   return 'en';
 }
 
+/** Nearest 5-minute option's id for a given 24-hour `HH:MM`; exact ties (:x2.5, rounded to :x3) round down. */
+function nearestTimeOptionId(hhmm24: string): string | undefined {
+  const match = /^(\d{2}):(\d{2})$/.exec(hhmm24);
+  if (!match) return undefined;
+  const totalMinutes = Number(match[1]) * 60 + Number(match[2]);
+  const remainder = totalMinutes % 5;
+  const rounded = remainder < 3 ? totalMinutes - remainder : totalMinutes + (5 - remainder);
+  const clamped = Math.min(Math.max(rounded, 0), 24 * 60 - 5);
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${pad(Math.floor(clamped / 60))}:${pad(clamped % 60)}`;
+}
+
 /** Widest option ("12:55 PM") plus breathing room. */
 const TIME_SELECT_WIDTH = '92px';
 
@@ -183,20 +195,35 @@ function TimeOfDaySelect({
         dropdownWidth="160px"
         minWidthPixels="160"
         // No `focusOnOption`: it pre-highlights the nearest preset purely for
-        // scroll positioning when the dropdown opens, but the underlying
-        // dropdown treats a highlighted option as if Tab/Enter explicitly
-        // chose it. An `onSelect` guard tried to tell "Tab silently
-        // confirming the highlight" apart from "a deliberate click" by
-        // comparing the clicked option against what's already typed — but
-        // that's indistinguishable in general: the field always shows some
-        // valid time before you click a different one, so the guard ended up
-        // blocking every click, not just the spurious Tab case. There's no
-        // reliable way to tell those apart from inside `onSelect`, so this
-        // trades the "opens near the current time" convenience for clicking
-        // and typing both working correctly.
+        // scroll positioning, but the underlying dropdown treats a
+        // highlighted option as if Tab/Enter explicitly chose it, and
+        // there's no reliable way to tell "Tab silently confirming the
+        // highlight" apart from "a deliberate click" from inside `onSelect`
+        // (see the git history on this file — an attempt at that broke every
+        // click). Scroll-to-current-time is instead done directly via
+        // `onFocus` below, by finding the option's own DOM node and calling
+        // `scrollIntoView` on it — this never touches the dropdown's hover
+        // or selection state, so it can't reintroduce that bug.
         popoverProps={{ appendTo: 'window' }}
         status={invalid ? 'error' : undefined}
         statusMessage={invalid ? 'Enter a time like 9:30 AM or 14:30.' : undefined}
+        onFocus={() => {
+          const targetId = nearestTimeOptionId(value);
+          if (!targetId) return;
+          // The dropdown's option list doesn't exist in the DOM yet on this
+          // same tick (it mounts from a state update `onFocus` triggers
+          // internally, then gets positioned) — two frames gives both the
+          // mount and the popover's own layout pass time to land before
+          // searching for the option to scroll to. `:` in the id needs no
+          // escaping inside a quoted attribute-value selector.
+          requestAnimationFrame(() => {
+            requestAnimationFrame(() => {
+              document
+                .querySelector(`[data-hook="dropdown-item-${targetId}"]`)
+                ?.scrollIntoView({ block: 'center' });
+            });
+          });
+        }}
         onChange={(event) => {
           const typed = event.target.value;
           setText(typed);
