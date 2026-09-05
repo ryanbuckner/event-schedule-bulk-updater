@@ -10,7 +10,16 @@
  */
 
 import { dashboard } from '@wix/dashboard';
-import { Box, Button, Card, IconButton, SectionHelper, Text, TextButton } from '@wix/design-system';
+import {
+  Box,
+  Button,
+  Card,
+  IconButton,
+  LinearProgressBar,
+  SectionHelper,
+  Text,
+  TextButton,
+} from '@wix/design-system';
 import { Add, Delete } from '@wix/wix-ui-icons-common';
 import React, { useState } from 'react';
 import { saveSchedule } from '../../../backend/api/schedule.web';
@@ -26,6 +35,15 @@ import { NameCell, PlaceCell, RequiredMark, TagsCell, TimeSlotCell } from './cel
  * since a new item has no end of its own yet worth preserving.
  */
 const DEFAULT_DURATION_MINUTES = 15;
+
+/**
+ * Items per create request. Confirmed against real behavior: Wix's Events
+ * API accepts about 6 creates before a burst rate limit kicks in, so 5 stays
+ * under that — and splitting into rounds this way is also what makes a real
+ * "N of M added" progress bar possible, since one giant request only ever
+ * resolves once, all at once.
+ */
+const CREATE_CHUNK = 5;
 
 function blankRow(startIso: string, timeZoneId: string): ScheduleRowFields {
   return {
@@ -69,6 +87,7 @@ export function AddItemsPanel({
   ]);
   const [committing, setCommitting] = useState(false);
   const [failures, setFailures] = useState<RowResult[]>([]);
+  const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
 
   const setField = <K extends keyof ScheduleRowFields>(
     index: number,
@@ -114,42 +133,64 @@ export function AddItemsPanel({
     if (hasErrors || drafts.length === 0) return;
     setCommitting(true);
     setFailures([]);
+    setProgress({ done: 0, total: drafts.length });
+
+    // Chunked into separate requests rather than one giant call — a large
+    // batch can take a while (the API's own rate limit means some items only
+    // land after a retry-with-backoff), and one request only ever resolves
+    // once, all at once, which can't show real progress along the way.
+    const results: RowResult[] = [];
     try {
-      const outcome = await saveSchedule(eventId, { creates: drafts });
-      const failed = outcome.results.filter((result) => !result.ok);
-      setFailures(failed);
-      // Results are positionally aligned with `drafts` (creates preserve
-      // order end to end, and a request only reaches the server at all once
-      // every row has passed validation) — index, not rowId, is what
-      // reliably ties a result back to its draft, since a successful
-      // create's rowId is the new server-assigned id, not `new-<index>`.
-      // Drop the ones that succeeded; only failures stay in the form to fix
-      // and retry, so retrying never recreates something already saved.
-      setDrafts((previous) => previous.filter((_, index) => !outcome.results[index]?.ok));
-      if (failed.length === 0) {
-        dashboard.showToast({
-          message: `Added ${outcome.results.length} item${outcome.results.length === 1 ? '' : 's'} to the draft schedule.`,
-          type: 'success',
-        });
-        await onApplied();
-      } else {
-        // Some creates may still have landed before the rest failed, so the
-        // grid needs to catch up even though the panel stays open for the
-        // user to see and retry what didn't.
-        dashboard.showToast({
-          message: `${outcome.results.length - failed.length} added, ${failed.length} failed.`,
-          type: 'error',
-        });
-        await onRefresh();
+      for (let i = 0; i < drafts.length; i += CREATE_CHUNK) {
+        const chunk = drafts.slice(i, i + CREATE_CHUNK);
+        const outcome = await saveSchedule(eventId, { creates: chunk });
+        results.push(...outcome.results);
+        setProgress({ done: Math.min(i + CREATE_CHUNK, drafts.length), total: drafts.length });
       }
     } catch (error) {
+      // A chunk can fail outright (network error, etc.) after earlier chunks
+      // already landed — refresh and drop what succeeded so far rather than
+      // leave the grid stale and risk duplicating those on retry.
+      setDrafts((previous) => previous.filter((_, index) => !results[index]?.ok));
+      await onRefresh();
       dashboard.showToast({
         message: errorMessage(error, 'Could not add the items.'),
         type: 'error',
       });
-    } finally {
       setCommitting(false);
+      setProgress(null);
+      return;
     }
+
+    const failed = results.filter((result) => !result.ok);
+    setFailures(failed);
+    // Results are positionally aligned with `drafts` (creates preserve order
+    // end to end within and across chunks, and a request only reaches the
+    // server at all once every row has passed validation) — index, not
+    // rowId, is what reliably ties a result back to its draft, since a
+    // successful create's rowId is the new server-assigned id, not
+    // `new-<index>`. Drop the ones that succeeded; only failures stay in the
+    // form to fix and retry, so retrying never recreates something already
+    // saved.
+    setDrafts((previous) => previous.filter((_, index) => !results[index]?.ok));
+    if (failed.length === 0) {
+      dashboard.showToast({
+        message: `Added ${results.length} item${results.length === 1 ? '' : 's'} to the draft schedule.`,
+        type: 'success',
+      });
+      await onApplied();
+    } else {
+      // Some creates may still have landed before the rest failed, so the
+      // grid needs to catch up even though the panel stays open for the
+      // user to see and retry what didn't.
+      dashboard.showToast({
+        message: `${results.length - failed.length} added, ${failed.length} failed.`,
+        type: 'error',
+      });
+      await onRefresh();
+    }
+    setCommitting(false);
+    setProgress(null);
   };
 
   return (
@@ -282,6 +323,20 @@ export function AddItemsPanel({
               Add another item
             </Button>
           </Box>
+
+          {progress ? (
+            <Box direction="vertical" gap="SP1">
+              <LinearProgressBar
+                value={(progress.done / progress.total) * 100}
+                label={`Adding ${progress.done} of ${progress.total}…`}
+                showProgressIndication
+              />
+              <Text size="tiny" secondary>
+                Large batches go a few items at a time and pause briefly between groups —
+                that's Wix's own API pacing itself, not this app stalling.
+              </Text>
+            </Box>
+          ) : null}
 
           <Box gap="SP2">
             <Button size="small" disabled={committing || hasErrors} onClick={commit}>
