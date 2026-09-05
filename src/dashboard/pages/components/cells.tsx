@@ -449,11 +449,6 @@ export function HiddenCell({
  * instead, since a row that can't be saved shouldn't also claim to be merely
  * "unpublished."
  */
-/** TEMP diagnostic: forces `RowStatusIcons` to render nothing, to test
- * whether the status cell is what's causing the Item Name cursor jump.
- * Revert once we know. */
-const TEMP_DISABLE_ROW_STATUS_ICONS = true;
-
 export function RowStatusIcons({
   dirty,
   unpublished,
@@ -463,7 +458,6 @@ export function RowStatusIcons({
   unpublished: boolean;
   errors: RowError[] | undefined;
 }) {
-  if (TEMP_DISABLE_ROW_STATUS_ICONS) return null;
   if (errors && errors.length > 0) {
     return (
       <StatusIndicator

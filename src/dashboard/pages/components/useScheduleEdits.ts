@@ -112,42 +112,31 @@ export function useScheduleEdits(rows: ScheduleRow[]): ScheduleEdits {
     [],
   );
 
-  // TEMP diagnostic: dirty/pending/error tracking commented out (not
-  // deleted) to test whether this whole recompute cascade — not just its
-  // known UI consumers (RowStatusIcons, the primary Save button label),
-  // which were already neutralized without fixing the cursor jump — is
-  // itself implicated. Restore this block once we know either way.
-  //
-  // const pending = useMemo(() => {
-  //   const result: { id: string; fields: EditableField[]; next: ScheduleRowFields }[] = [];
-  //   for (const row of rows) {
-  //     const edited = edits.get(row.id);
-  //     if (!edited) continue;
-  //     const baseline = baselines.current.get(row.id) ?? toFields(row);
-  //     const fields = changedFields(baseline, edited);
-  //     if (fields.length > 0) result.push({ id: row.id, fields, next: edited });
-  //   }
-  //   return result;
-  // }, [rows, edits]);
-  //
-  // const dirtyIds = useMemo(() => new Set(pending.map((p) => p.id)), [pending]);
-  //
-  // // Only changed rows are validated: pre-existing server data that happens to
-  // // break a rule this app enforces shouldn't block an unrelated edit.
-  // const errorsByRow = useMemo(
-  //   () => groupErrorsByRow(pending.flatMap((p) => validateRow(p.id, p.next))),
-  //   [pending],
-  // );
-  //
-  // const errorCount = useMemo(
-  //   () => [...errorsByRow.values()].reduce((sum, list) => sum + list.length, 0),
-  //   [errorsByRow],
-  // );
+  const pending = useMemo(() => {
+    const result: { id: string; fields: EditableField[]; next: ScheduleRowFields }[] = [];
+    for (const row of rows) {
+      const edited = edits.get(row.id);
+      if (!edited) continue;
+      const baseline = baselines.current.get(row.id) ?? toFields(row);
+      const fields = changedFields(baseline, edited);
+      if (fields.length > 0) result.push({ id: row.id, fields, next: edited });
+    }
+    return result;
+  }, [rows, edits]);
 
-  const pending: { id: string; fields: EditableField[]; next: ScheduleRowFields }[] = [];
-  const dirtyIds = new Set<string>();
-  const errorsByRow = new Map<string, RowError[]>();
-  const errorCount = 0;
+  const dirtyIds = useMemo(() => new Set(pending.map((p) => p.id)), [pending]);
+
+  // Only changed rows are validated: pre-existing server data that happens to
+  // break a rule this app enforces shouldn't block an unrelated edit.
+  const errorsByRow = useMemo(
+    () => groupErrorsByRow(pending.flatMap((p) => validateRow(p.id, p.next))),
+    [pending],
+  );
+
+  const errorCount = useMemo(
+    () => [...errorsByRow.values()].reduce((sum, list) => sum + list.length, 0),
+    [errorsByRow],
+  );
 
   const reset = useCallback(() => setEdits(new Map()), []);
 

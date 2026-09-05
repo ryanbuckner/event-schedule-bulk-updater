@@ -49,7 +49,7 @@ import {
 } from '@wix/patterns';
 import { CollectionPage } from '@wix/patterns/page';
 import { Check, Delete, Publish, Unsaved } from '@wix/wix-ui-icons-common';
-import React, { useCallback, useRef, useState } from 'react';
+import React, { useCallback, useMemo, useRef, useState } from 'react';
 import {
   getSchedule,
   saveSchedule,
@@ -283,106 +283,130 @@ export function ScheduleEditor({
     }
   }, [pendingDelete, event.id, state.collection]);
 
-  const columns: TableColumn<ScheduleRow>[] = [
-    {
-      id: 'status',
-      name: 'Status',
-      title: '',
-      width: '64px',
-      hiddenFromCustomColumnsSelection: true,
-      render: (row: ScheduleRow) => (
-        <RowStatusIcons
-          dirty={edits.isDirty(row.id)}
-          unpublished={draftNotPublished}
-          errors={edits.errorsByRow.get(row.id)}
-        />
-      ),
-    },
-    {
-      id: 'name',
-      name: 'Item Name',
-      title: 'Item Name',
-      width: '26%',
-      hiddenFromCustomColumnsSelection: true,
-      render: (row: ScheduleRow) => (
-        <NameCell
-          values={edits.valueOf(row)}
-          errors={edits.errorsByRow.get(row.id)}
-          disabled={busy}
-          onChange={(value) => edits.setField(row, 'name', value)}
-        />
-      ),
-    },
-    {
-      id: 'start',
-      name: 'Start Date and Time',
-      title: 'Start Date and Time',
-      width: '34%',
-      render: (row: ScheduleRow) => {
-        const values = edits.valueOf(row);
-        return (
-          <Box direction="vertical" gap="SP1">
-            <TimeSlotCell
-              iso={values.start}
-              timeZoneId={values.timeZoneId}
-              message={edits.errorsByRow.get(row.id)?.find((e) => e.field === 'start')?.message}
-              disabled={busy}
-              onChange={(iso) => edits.setField(row, 'start', iso)}
-            />
-            <PlaceCell
-              value={values.stageName}
-              options={placeOptions}
-              message={
-                edits.errorsByRow.get(row.id)?.find((e) => e.field === 'stageName')?.message
-              }
-              disabled={busy}
-              onChange={(value) => edits.setField(row, 'stageName', value)}
-            />
-          </Box>
-        );
+  // DIAGNOSTIC: `columns` used to be a plain array literal, rebuilt with a
+  // brand-new identity on every render (every keystroke, since each render
+  // closed over the current `edits`/`busy`/`placeOptions`). Testing whether
+  // the grid's underlying table reacts badly to that by making `columns`
+  // truly stable instead — computed once via `useMemo(..., [])` — with each
+  // render function reading current values through this ref rather than
+  // closing over them directly, so the input's actual value/handlers stay
+  // live even though the column definitions themselves never change identity.
+  const liveRef = useRef({ edits, busy, placeOptions, draftNotPublished });
+  liveRef.current = { edits, busy, placeOptions, draftNotPublished };
+
+  const columns: TableColumn<ScheduleRow>[] = useMemo(
+    () => [
+      {
+        id: 'status',
+        name: 'Status',
+        title: '',
+        width: '64px',
+        hiddenFromCustomColumnsSelection: true,
+        render: (row: ScheduleRow) => (
+          <RowStatusIcons
+            dirty={liveRef.current.edits.isDirty(row.id)}
+            unpublished={liveRef.current.draftNotPublished}
+            errors={liveRef.current.edits.errorsByRow.get(row.id)}
+          />
+        ),
       },
-    },
-    {
-      id: 'end',
-      name: 'End Date and Time',
-      title: 'End Date and Time',
-      width: '34%',
-      render: (row: ScheduleRow) => {
-        const values = edits.valueOf(row);
-        return (
-          <Box direction="vertical" gap="SP1">
-            <TimeSlotCell
-              iso={values.end}
-              timeZoneId={values.timeZoneId}
-              message={edits.errorsByRow.get(row.id)?.find((e) => e.field === 'end')?.message}
-              disabled={busy}
-              onChange={(iso) => edits.setField(row, 'end', iso)}
-            />
-            <TagsCell
-              values={values}
-              errors={edits.errorsByRow.get(row.id)}
-              disabled={busy}
-              onChange={(tags) => edits.setField(row, 'tags', tags)}
-            />
-          </Box>
-        );
+      {
+        id: 'name',
+        name: 'Item Name',
+        title: 'Item Name',
+        width: '26%',
+        hiddenFromCustomColumnsSelection: true,
+        render: (row: ScheduleRow) => (
+          <NameCell
+            values={liveRef.current.edits.valueOf(row)}
+            errors={liveRef.current.edits.errorsByRow.get(row.id)}
+            disabled={liveRef.current.busy}
+            onChange={(value) => liveRef.current.edits.setField(row, 'name', value)}
+          />
+        ),
       },
-    },
-    {
-      id: 'hidden',
-      name: 'Hidden',
-      title: '',
-      width: '40px',
-      hiddenFromCustomColumnsSelection: true,
-      render: (row: ScheduleRow) => (
-        <HiddenCell
-          values={edits.valueOf(row)}
-          disabled={busy}
-          onChange={(hidden) => edits.setField(row, 'hidden', hidden)}
-        />
-      ),
-    },
-  ];
+      {
+        id: 'start',
+        name: 'Start Date and Time',
+        title: 'Start Date and Time',
+        width: '34%',
+        render: (row: ScheduleRow) => {
+          const values = liveRef.current.edits.valueOf(row);
+          return (
+            <Box direction="vertical" gap="SP1">
+              <TimeSlotCell
+                iso={values.start}
+                timeZoneId={values.timeZoneId}
+                message={
+                  liveRef.current.edits.errorsByRow
+                    .get(row.id)
+                    ?.find((e) => e.field === 'start')?.message
+                }
+                disabled={liveRef.current.busy}
+                onChange={(iso) => liveRef.current.edits.setField(row, 'start', iso)}
+              />
+              <PlaceCell
+                value={values.stageName}
+                options={liveRef.current.placeOptions}
+                message={
+                  liveRef.current.edits.errorsByRow
+                    .get(row.id)
+                    ?.find((e) => e.field === 'stageName')?.message
+                }
+                disabled={liveRef.current.busy}
+                onChange={(value) => liveRef.current.edits.setField(row, 'stageName', value)}
+              />
+            </Box>
+          );
+        },
+      },
+      {
+        id: 'end',
+        name: 'End Date and Time',
+        title: 'End Date and Time',
+        width: '34%',
+        render: (row: ScheduleRow) => {
+          const values = liveRef.current.edits.valueOf(row);
+          return (
+            <Box direction="vertical" gap="SP1">
+              <TimeSlotCell
+                iso={values.end}
+                timeZoneId={values.timeZoneId}
+                message={
+                  liveRef.current.edits.errorsByRow
+                    .get(row.id)
+                    ?.find((e) => e.field === 'end')?.message
+                }
+                disabled={liveRef.current.busy}
+                onChange={(iso) => liveRef.current.edits.setField(row, 'end', iso)}
+              />
+              <TagsCell
+                values={values}
+                errors={liveRef.current.edits.errorsByRow.get(row.id)}
+                disabled={liveRef.current.busy}
+                onChange={(tags) => liveRef.current.edits.setField(row, 'tags', tags)}
+              />
+            </Box>
+          );
+        },
+      },
+      {
+        id: 'hidden',
+        name: 'Hidden',
+        title: '',
+        width: '40px',
+        hiddenFromCustomColumnsSelection: true,
+        render: (row: ScheduleRow) => (
+          <HiddenCell
+            values={liveRef.current.edits.valueOf(row)}
+            disabled={liveRef.current.busy}
+            onChange={(hidden) => liveRef.current.edits.setField(row, 'hidden', hidden)}
+          />
+        ),
+      },
+    ],
+    [],
+  );
 
   return (
     <CollectionPage>
@@ -603,14 +627,15 @@ export function ScheduleEditor({
               );
             }}
             primaryActionButton={
-              // TEMP diagnostic: label text and disabled state normally react
-              // to edits.dirtyCount, which flips the instant a row's first
-              // field is edited — testing whether that simultaneous
-              // text+disabled change on this always-visible button is what's
-              // resetting focus/selection in whichever cell is being typed
-              // into. Revert once we know.
-              <PrimaryActionButton onClick={save} disabled={busy}>
-                {progress ? `Saving ${progress.done} of ${progress.total}…` : 'Save draft'}
+              <PrimaryActionButton
+                onClick={save}
+                disabled={busy || blocked || edits.dirtyCount === 0}
+              >
+                {progress
+                  ? `Saving ${progress.done} of ${progress.total}…`
+                  : edits.dirtyCount > 0
+                    ? `Save ${edits.dirtyCount} change${edits.dirtyCount === 1 ? '' : 's'} as draft`
+                    : 'Save draft'}
               </PrimaryActionButton>
             }
             emptyState={
