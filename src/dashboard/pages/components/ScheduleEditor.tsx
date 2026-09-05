@@ -322,7 +322,7 @@ export function ScheduleEditor({
         id: 'status',
         name: 'Status',
         title: '',
-        width: '64px',
+        width: '44px',
         hiddenFromCustomColumnsSelection: true,
         render: (row: ScheduleRow) => (
           <RowStatusIcons
