@@ -466,19 +466,26 @@ export function RowStatusIcons({
       />
     );
   }
-  if (!dirty && !unpublished) return null;
+  // Always the same shape — both icon slots stay mounted, toggled by
+  // `visibility` rather than by conditionally rendering them. The status
+  // column sits right next to Item Name in the grid, and this cell used to
+  // return `null` outright until a row went dirty; the first keystroke that
+  // makes a row dirty landed on the exact same render as the edited cell's
+  // own value update, and that sibling cell going from nothing to a mounted
+  // Tooltip+icon on that render was enough to reset focus/selection in the
+  // cell being typed into. Keeping the DOM shape constant avoids that.
   return (
     <Box gap="SP1" verticalAlign="middle">
-      {dirty ? (
+      <span style={{ visibility: dirty ? 'visible' : 'hidden' }}>
         <Tooltip content="Unsaved changes: edited, not yet saved to the draft schedule.">
           <Unsaved size="18px" color={UNSAVED_ICON_COLOR} />
         </Tooltip>
-      ) : null}
-      {unpublished ? (
+      </span>
+      <span style={{ visibility: unpublished ? 'visible' : 'hidden' }}>
         <Tooltip content="Unpublished changes: saved to the draft, but guests still see the last published schedule.">
           <Publish size="18px" color={UNPUBLISHED_ICON_COLOR} />
         </Tooltip>
-      ) : null}
+      </span>
     </Box>
   );
 }
