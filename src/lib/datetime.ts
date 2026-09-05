@@ -117,23 +117,35 @@ export function toInputStrings(
   };
 }
 
-/** Inverse of toInputStrings. Returns null when either part is malformed. */
+/**
+ * Inverse of toInputStrings. Returns null when either part is malformed.
+ *
+ * The time half accepts a single-digit hour ("9:20", not just "09:20") —
+ * `toInputStrings`/the grid's own picker always zero-pad going out, but a
+ * hand-edited or externally-sourced CSV commonly won't, and rejecting a
+ * perfectly unambiguous time like "9:20" over formatting alone isn't a real
+ * validation failure.
+ */
 export function fromInputStrings(
   date: string,
   time: string,
   timeZoneId: string,
 ): string | null {
   const dateMatch = /^(\d{4})-(\d{2})-(\d{2})$/.exec(date);
-  const timeMatch = /^(\d{2}):(\d{2})$/.exec(time);
+  const timeMatch = /^(\d{1,2}):(\d{2})$/.exec(time);
   if (!dateMatch || !timeMatch) return null;
+
+  const hour = Number(timeMatch[1]);
+  const minute = Number(timeMatch[2]);
+  if (hour > 23 || minute > 59) return null;
 
   return fromWallTime(
     {
       year: Number(dateMatch[1]),
       month: Number(dateMatch[2]),
       day: Number(dateMatch[3]),
-      hour: Number(timeMatch[1]),
-      minute: Number(timeMatch[2]),
+      hour,
+      minute,
     },
     timeZoneId,
   );
