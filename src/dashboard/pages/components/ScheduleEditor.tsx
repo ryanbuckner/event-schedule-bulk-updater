@@ -453,7 +453,10 @@ export function ScheduleEditor({
             activeId="schedule"
             items={[
               { id: 'events', value: 'Bulk Events' },
-              { id: 'event', value: event.title },
+              // Inert, same as "Schedule" — there's no event-overview screen
+              // in this app to send it to, so it shouldn't read as a link
+              // that goes nowhere when clicked.
+              { id: 'event', value: event.title, disabled: true },
               { id: 'schedule', value: 'Schedule' },
             ]}
             onClick={(item) => {
