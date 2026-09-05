@@ -54,9 +54,9 @@ function localDateToYmd(date: Date): string {
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
 }
 
-/** Every 10-minute time of day, as 24-hour `HH:MM`. */
-const TIME_VALUES: string[] = Array.from({ length: 144 }, (_, i) => {
-  const minutes = i * 10;
+/** Every 5-minute time of day, as 24-hour `HH:MM`. */
+const TIME_VALUES: string[] = Array.from({ length: 288 }, (_, i) => {
+  const minutes = i * 5;
   const pad = (n: number) => String(n).padStart(2, '0');
   return `${pad(Math.floor(minutes / 60))}:${pad(minutes % 60)}`;
 });
@@ -115,11 +115,11 @@ function toDatePickerLocale(locale: string): SupportedWixLocales {
   return 'en';
 }
 
-/** Widest option ("12:50 PM") plus breathing room. */
+/** Widest option ("12:55 PM") plus breathing room. */
 const TIME_SELECT_WIDTH = '92px';
 
 /**
- * Time-of-day picker: a 10-minute-increment dropdown that also accepts typed
+ * Time-of-day picker: a 5-minute-increment dropdown that also accepts typed
  * input, validated as you type. `value`/`onChange` are 24-hour `HH:MM`; the
  * displayed and typed text follows the dashboard user's own locale (12-hour
  * "9:30 AM" or 24-hour "14:30", whichever that locale defaults to).
@@ -172,12 +172,14 @@ function TimeOfDaySelect({
         menuArrow={false}
         dropdownWidth="160px"
         minWidthPixels="160"
-        // No `focusOnOption`: pre-highlighting the nearest 10-minute preset
-        // meant Tab (the dropdown's "select the hovered option" shortcut)
-        // silently overwrote a typed custom value like "10:45 PM" with the
-        // nearest preset the instant you tabbed away. Arrow-key navigation
-        // still highlights and selects presets normally; this only drops the
-        // *automatic* highlight that fired without the user asking for it.
+        // No `focusOnOption`: pre-highlighting the nearest preset meant Tab
+        // (the dropdown's "select the hovered option" shortcut) silently
+        // overwrote a typed custom value with the nearest preset the instant
+        // you tabbed away — still possible for a value off the 5-minute
+        // grid (e.g. "10:47 PM"), which `onBlur` below guards against
+        // directly. Arrow-key navigation still highlights and selects
+        // presets normally; this only drops the *automatic* highlight that
+        // fired without the user asking for it.
         popoverProps={{ appendTo: 'window' }}
         status={invalid ? 'error' : undefined}
         statusMessage={invalid ? 'Enter a time like 9:30 AM or 14:30.' : undefined}
