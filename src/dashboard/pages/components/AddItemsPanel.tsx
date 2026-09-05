@@ -18,7 +18,7 @@ import { shiftMinutes } from '../../../lib/datetime';
 import { errorMessage } from '../../../lib/errors';
 import type { RowError, RowResult, ScheduleRowFields } from '../../../lib/types';
 import { normalizeDuration, validateRow } from '../../../lib/validation';
-import { NameCell, PlaceCell, TagsCell, TimeSlotCell } from './cells';
+import { NameCell, PlaceCell, RequiredMark, TagsCell, TimeSlotCell } from './cells';
 
 /**
  * Default duration for a new item. Applied both to a brand-new blank row and
@@ -177,6 +177,7 @@ export function AddItemsPanel({
                 <Box direction="vertical" gap="SP1">
                   <Text size="tiny" secondary>
                     Item Name
+                    <RequiredMark />
                   </Text>
                   <NameCell
                     values={row}
@@ -189,6 +190,7 @@ export function AddItemsPanel({
                   <Box direction="vertical" gap="SP1">
                     <Text size="tiny" secondary>
                       Start Date and Time
+                      <RequiredMark />
                     </Text>
                     <TimeSlotCell
                       iso={row.start}
@@ -215,6 +217,7 @@ export function AddItemsPanel({
                   <Box direction="vertical" gap="SP1">
                     <Text size="tiny" secondary>
                       End Date and Time
+                      <RequiredMark />
                     </Text>
                     <TimeSlotCell
                       iso={row.end}

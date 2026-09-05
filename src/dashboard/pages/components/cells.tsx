@@ -33,9 +33,19 @@ import {
 import { SupportedWixLocales } from '@wix/design-systems-locale-utils';
 import { i18n } from '@wix/essentials';
 import { Hidden, Publish, Unsaved, Visible } from '@wix/wix-ui-icons-common';
+import { Asterisk } from '@wix/wix-ui-icons-common/system';
 import React, { useMemo, useRef, useState } from 'react';
 import { fromInputStrings, toInputStrings } from '../../../lib/datetime';
 import { LIMITS, type RowError, type ScheduleRowFields } from '../../../lib/types';
+
+/**
+ * Matches WDS `FormField`'s own required-field indicator (same icon, color,
+ * and spacing) for the places that need it outside an actual `FormField` —
+ * this grid's column headers and Add Schedule Item's field labels.
+ */
+export function RequiredMark() {
+  return <Asterisk style={{ marginLeft: 3 }} color="#116DFF" />;
+}
 
 /** Shared with the legend in `ScheduleEditor.tsx`, so the icons mean the same thing everywhere. */
 export const UNSAVED_ICON_COLOR = '#B54900';

@@ -71,6 +71,7 @@ import {
   HiddenCell,
   NameCell,
   PlaceCell,
+  RequiredMark,
   RowStatusIcons,
   TagsCell,
   TimeSlotCell,
@@ -320,7 +321,12 @@ export function ScheduleEditor({
       {
         id: 'name',
         name: 'Item Name',
-        title: 'Item Name',
+        title: (
+          <>
+            Item Name
+            <RequiredMark />
+          </>
+        ),
         width: '26%',
         hiddenFromCustomColumnsSelection: true,
         render: (row: ScheduleRow) => (
@@ -335,7 +341,12 @@ export function ScheduleEditor({
       {
         id: 'start',
         name: 'Start Date and Time',
-        title: 'Start Date and Time',
+        title: (
+          <>
+            Start Date and Time
+            <RequiredMark />
+          </>
+        ),
         width: '34%',
         render: (row: ScheduleRow) => {
           const values = liveRef.current.edits.valueOf(row);
@@ -370,7 +381,12 @@ export function ScheduleEditor({
       {
         id: 'end',
         name: 'End Date and Time',
-        title: 'End Date and Time',
+        title: (
+          <>
+            End Date and Time
+            <RequiredMark />
+          </>
+        ),
         width: '34%',
         render: (row: ScheduleRow) => {
           const values = liveRef.current.edits.valueOf(row);
