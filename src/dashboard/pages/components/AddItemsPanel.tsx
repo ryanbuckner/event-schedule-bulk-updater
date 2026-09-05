@@ -20,8 +20,12 @@ import type { RowError, RowResult, ScheduleRowFields } from '../../../lib/types'
 import { normalizeDuration, validateRow } from '../../../lib/validation';
 import { NameCell, PlaceCell, TagsCell, TimeSlotCell } from './cells';
 
-/** No duration was specified for a new item, so it gets a plain, easily-adjusted default. */
-const DEFAULT_DURATION_MINUTES = 30;
+/**
+ * Default duration for a new item. Applied both to a brand-new blank row and
+ * whenever the start time is edited — end always follows start by this much,
+ * since a new item has no end of its own yet worth preserving.
+ */
+const DEFAULT_DURATION_MINUTES = 15;
 
 function blankRow(startIso: string, timeZoneId: string): ScheduleRowFields {
   return {
@@ -66,9 +70,17 @@ export function AddItemsPanel({
     value: ScheduleRowFields[K],
   ) => {
     setDrafts((previous) =>
-      previous.map((row, i) =>
-        i === index ? normalizeDuration({ ...row, [field]: value }) : row,
-      ),
+      previous.map((row, i) => {
+        if (i !== index) return row;
+        const updated = { ...row, [field]: value };
+        // A new item has no end of its own worth preserving yet, so end
+        // always follows start by the same default duration rather than
+        // just being nudged to stay a minimum gap apart.
+        if (field === 'start') {
+          updated.end = shiftMinutes(updated.start, DEFAULT_DURATION_MINUTES) ?? updated.end;
+        }
+        return normalizeDuration(updated);
+      }),
     );
   };
 
