@@ -4,9 +4,9 @@
  * A lightweight local form rather than rows injected into the grid: the grid's
  * collection is server-driven, and giving it synthetic not-yet-saved rows
  * would fight that. Each draft needs a name and a start/end time before it can
- * be added — description, tags, and location aren't collected here (they
- * aren't grid columns either) and can be filled in afterward through CSV
- * import.
+ * be added; Place and Tags are optional here, same as in the grid. Description
+ * isn't collected here (it isn't a grid column either) and can be filled in
+ * afterward through CSV import.
  */
 
 import { dashboard } from '@wix/dashboard';
@@ -18,7 +18,7 @@ import { shiftMinutes } from '../../../lib/datetime';
 import { errorMessage } from '../../../lib/errors';
 import type { RowError, RowResult, ScheduleRowFields } from '../../../lib/types';
 import { normalizeDuration, validateRow } from '../../../lib/validation';
-import { NameCell, TimeSlotCell } from './cells';
+import { NameCell, PlaceCell, TagsCell, TimeSlotCell } from './cells';
 
 /** No duration was specified for a new item, so it gets a plain, easily-adjusted default. */
 const DEFAULT_DURATION_MINUTES = 30;
@@ -41,6 +41,7 @@ export function AddItemsPanel({
   eventId,
   defaultStart,
   defaultTimeZoneId,
+  placeOptions,
   onClose,
   onApplied,
 }: {
@@ -48,6 +49,8 @@ export function AddItemsPanel({
   /** Suggested start for the first item — 10 minutes after the last scheduled item's end, or the event's own start when the schedule is empty. */
   defaultStart: string;
   defaultTimeZoneId: string;
+  /** Existing places across this schedule, offered as Place suggestions — same list the grid uses. */
+  placeOptions: string[];
   onClose: () => void;
   onApplied: () => Promise<void> | void;
 }) {
@@ -123,7 +126,7 @@ export function AddItemsPanel({
     <Card>
       <Card.Header
         title="Add new schedule items"
-        subtitle="Set a name and start/end time for each. Description, tags, and location can be filled in afterward through CSV import."
+        subtitle="Set a name and start/end time for each. Place and Tags are optional. Description can be filled in afterward through CSV import."
         suffix={
           <TextButton size="small" onClick={onClose} disabled={committing}>
             Close
@@ -170,29 +173,56 @@ export function AddItemsPanel({
                     onChange={(value) => setField(index, 'name', value)}
                   />
                 </Box>
-                <Box direction="vertical" gap="SP1">
-                  <Text size="tiny" secondary>
-                    Start Date and Time
-                  </Text>
-                  <TimeSlotCell
-                    iso={row.start}
-                    timeZoneId={row.timeZoneId}
-                    message={errors.find((e) => e.field === 'start')?.message}
-                    disabled={committing}
-                    onChange={(iso) => setField(index, 'start', iso)}
-                  />
+                <Box direction="vertical" gap="SP2">
+                  <Box direction="vertical" gap="SP1">
+                    <Text size="tiny" secondary>
+                      Start Date and Time
+                    </Text>
+                    <TimeSlotCell
+                      iso={row.start}
+                      timeZoneId={row.timeZoneId}
+                      message={errors.find((e) => e.field === 'start')?.message}
+                      disabled={committing}
+                      onChange={(iso) => setField(index, 'start', iso)}
+                    />
+                  </Box>
+                  <Box direction="vertical" gap="SP1">
+                    <Text size="tiny" secondary>
+                      Place
+                    </Text>
+                    <PlaceCell
+                      value={row.stageName}
+                      options={placeOptions}
+                      message={errors.find((e) => e.field === 'stageName')?.message}
+                      disabled={committing}
+                      onChange={(value) => setField(index, 'stageName', value)}
+                    />
+                  </Box>
                 </Box>
-                <Box direction="vertical" gap="SP1">
-                  <Text size="tiny" secondary>
-                    End Date and Time
-                  </Text>
-                  <TimeSlotCell
-                    iso={row.end}
-                    timeZoneId={row.timeZoneId}
-                    message={errors.find((e) => e.field === 'end')?.message}
-                    disabled={committing}
-                    onChange={(iso) => setField(index, 'end', iso)}
-                  />
+                <Box direction="vertical" gap="SP2">
+                  <Box direction="vertical" gap="SP1">
+                    <Text size="tiny" secondary>
+                      End Date and Time
+                    </Text>
+                    <TimeSlotCell
+                      iso={row.end}
+                      timeZoneId={row.timeZoneId}
+                      message={errors.find((e) => e.field === 'end')?.message}
+                      disabled={committing}
+                      onChange={(iso) => setField(index, 'end', iso)}
+                    />
+                  </Box>
+                  <Box direction="vertical" gap="SP1">
+                    <Text size="tiny" secondary>
+                      Tags
+                    </Text>
+                    <TagsCell
+                      values={row}
+                      errors={errors}
+                      disabled={committing}
+                      onChange={(tags) => setField(index, 'tags', tags)}
+                    />
+                  </Box>
                 </Box>
                 <IconButton
                   size="small"

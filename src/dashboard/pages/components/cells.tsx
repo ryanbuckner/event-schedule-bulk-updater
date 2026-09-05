@@ -191,6 +191,20 @@ function TimeOfDaySelect({
           setText(String(option.value));
           onChange(String(option.id));
         }}
+        // Re-asserts whatever the user actually typed as the committed value
+        // on the way out, last, after anything else that happens during the
+        // Tab transition (the dropdown has its own "select the hovered
+        // preset" shortcut on Tab/Enter, tied to internal hover state this
+        // component doesn't control) — so a deliberate custom entry like
+        // "10:45 PM" can't be silently overwritten by a nearby preset.
+        // Harmless no-op when text already matches what's committed.
+        onBlur={() => {
+          const parsed = parseTimeOfDay(text);
+          if (parsed) {
+            setText(formatTimeOfDay(parsed, locale));
+            onChange(parsed);
+          }
+        }}
       />
     </Box>
   );

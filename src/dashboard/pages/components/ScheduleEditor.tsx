@@ -500,6 +500,7 @@ export function ScheduleEditor({
               eventId={event.id}
               defaultStart={nextItemDefault.start}
               defaultTimeZoneId={nextItemDefault.timeZoneId}
+              placeOptions={placeOptions}
               onClose={() => setShowAddItems(false)}
               onApplied={async () => {
                 await state.collection.refreshAllPages();
