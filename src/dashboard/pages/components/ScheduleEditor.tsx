@@ -457,8 +457,23 @@ export function ScheduleEditor({
               { id: 'events', value: 'Bulk Events' },
               // Inert, same as "Schedule" — there's no event-overview screen
               // in this app to send it to, so it shouldn't read as a link
-              // that goes nowhere when clicked.
-              { id: 'event', value: event.title, disabled: true },
+              // that goes nowhere when clicked. `disabled` alone renders this
+              // in Breadcrumbs' grey "disabled" text skin, which reads as
+              // broken rather than as plain context — a customElement with
+              // the same weight the active crumb gets (Breadcrumbs' own
+              // non-active default is a lighter "thin" weight) matches
+              // "Schedule"'s look without needing it to be clickable.
+              {
+                id: 'event',
+                value: event.title,
+                // `size="small"` matches Breadcrumbs' own default (its
+                // "medium" crumb size maps to WDS Text size "small").
+                customElement: (
+                  <Text size="small" weight="normal">
+                    {event.title}
+                  </Text>
+                ),
+              },
               { id: 'schedule', value: 'Schedule' },
             ]}
             onClick={(item) => {
