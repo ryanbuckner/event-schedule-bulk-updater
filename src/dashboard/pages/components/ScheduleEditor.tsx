@@ -283,14 +283,16 @@ export function ScheduleEditor({
     }
   }, [pendingDelete, event.id, state.collection]);
 
-  // DIAGNOSTIC: `columns` used to be a plain array literal, rebuilt with a
-  // brand-new identity on every render (every keystroke, since each render
-  // closed over the current `edits`/`busy`/`placeOptions`). Testing whether
-  // the grid's underlying table reacts badly to that by making `columns`
-  // truly stable instead — computed once via `useMemo(..., [])` — with each
-  // render function reading current values through this ref rather than
-  // closing over them directly, so the input's actual value/handlers stay
-  // live even though the column definitions themselves never change identity.
+  // `columns` must keep one stable identity for the life of the grid. It
+  // used to be a plain array literal, rebuilt fresh on every render — i.e.
+  // every keystroke, since each render closed over the current
+  // `edits`/`busy`/`placeOptions`. The underlying table resets focus and
+  // text selection in the currently-edited cell whenever it sees a new
+  // `columns` array, which read as "the cursor jumps to the end after the
+  // first character" — confirmed by testing. Computing `columns` once via
+  // `useMemo(..., [])` and having each render function read current values
+  // through this ref (instead of closing over them directly) keeps cell
+  // values/handlers live without ever changing the columns array itself.
   const liveRef = useRef({ edits, busy, placeOptions, draftNotPublished });
   liveRef.current = { edits, busy, placeOptions, draftNotPublished };
 
