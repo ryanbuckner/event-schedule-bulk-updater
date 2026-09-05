@@ -214,12 +214,21 @@ function TimeOfDaySelect({
           // same tick (it mounts from a state update `onFocus` triggers
           // internally, then gets positioned) — two frames gives both the
           // mount and the popover's own layout pass time to land before
-          // searching for the option to scroll to. `:` in the id needs no
-          // escaping inside a quoted attribute-value selector.
+          // searching for the option to scroll to.
           requestAnimationFrame(() => {
             requestAnimationFrame(() => {
-              document
-                .querySelector(`[data-hook="dropdown-item-${targetId}"]`)
+              // Scoped to *this* field's own listbox, the same way the
+              // library itself links them (`aria-controls` on the focused
+              // input -> that id on the listbox container) — a plain
+              // document-wide query isn't safe here since the grid can have
+              // many of these fields, each with their own dropdown content
+              // markup, and an unscoped match could find the wrong row's.
+              // `:` in the id needs no escaping inside a quoted
+              // attribute-value selector.
+              const listboxId = document.activeElement?.getAttribute('aria-controls');
+              const listbox = listboxId ? document.getElementById(listboxId) : null;
+              listbox
+                ?.querySelector(`[data-hook="dropdown-item-${targetId}"]`)
                 ?.scrollIntoView({ block: 'center' });
             });
           });
