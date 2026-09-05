@@ -49,7 +49,7 @@ import {
 } from '@wix/patterns';
 import { CollectionPage } from '@wix/patterns/page';
 import { Check, Delete, Publish, Unsaved } from '@wix/wix-ui-icons-common';
-import React, { useCallback, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   getSchedule,
   saveSchedule,
@@ -94,6 +94,18 @@ export function ScheduleEditor({
   const [showAddItems, setShowAddItems] = useState(false);
   const [pendingDelete, setPendingDelete] = useState<ScheduleRow[] | null>(null);
   const [deleting, setDeleting] = useState(false);
+
+  // "Add Schedule Item" is a toolbar action reachable from anywhere on the
+  // page, but the panel itself renders near the top of the content — if the
+  // user has scrolled down into a long schedule, it opens off-screen above
+  // them. Scroll it into view the moment it opens rather than leaving them
+  // to notice and scroll up themselves.
+  const addItemsRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (showAddItems) {
+      addItemsRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+  }, [showAddItems]);
 
   // Mirrors the table's own selection via `onSelectedItems`, so TimeShiftBar
   // can stay permanently rendered (never hidden) while still getting live
@@ -496,18 +508,20 @@ export function ScheduleEditor({
           ) : null}
 
           {showAddItems ? (
-            <AddItemsPanel
-              eventId={event.id}
-              defaultStart={nextItemDefault.start}
-              defaultTimeZoneId={nextItemDefault.timeZoneId}
-              placeOptions={placeOptions}
-              onClose={() => setShowAddItems(false)}
-              onApplied={async () => {
-                await state.collection.refreshAllPages();
-                setShowAddItems(false);
-                setPublishPrompt(true);
-              }}
-            />
+            <div ref={addItemsRef}>
+              <AddItemsPanel
+                eventId={event.id}
+                defaultStart={nextItemDefault.start}
+                defaultTimeZoneId={nextItemDefault.timeZoneId}
+                placeOptions={placeOptions}
+                onClose={() => setShowAddItems(false)}
+                onApplied={async () => {
+                  await state.collection.refreshAllPages();
+                  setShowAddItems(false);
+                  setPublishPrompt(true);
+                }}
+              />
+            </div>
           ) : null}
 
           {pendingDelete ? (

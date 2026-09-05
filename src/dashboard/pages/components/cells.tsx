@@ -115,6 +115,18 @@ function toDatePickerLocale(locale: string): SupportedWixLocales {
   return 'en';
 }
 
+/** Nearest 5-minute option's id for a given 24-hour `HH:MM`; exact ties (:x2.5, rounded to :x3) round down. */
+function nearestTimeOptionId(hhmm24: string): string | undefined {
+  const match = /^(\d{2}):(\d{2})$/.exec(hhmm24);
+  if (!match) return undefined;
+  const totalMinutes = Number(match[1]) * 60 + Number(match[2]);
+  const remainder = totalMinutes % 5;
+  const rounded = remainder < 3 ? totalMinutes - remainder : totalMinutes + (5 - remainder);
+  const clamped = Math.min(Math.max(rounded, 0), 24 * 60 - 5);
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${pad(Math.floor(clamped / 60))}:${pad(clamped % 60)}`;
+}
+
 /** Widest option ("12:55 PM") plus breathing room. */
 const TIME_SELECT_WIDTH = '92px';
 
@@ -172,14 +184,14 @@ function TimeOfDaySelect({
         menuArrow={false}
         dropdownWidth="160px"
         minWidthPixels="160"
-        // No `focusOnOption`: pre-highlighting the nearest preset meant Tab
-        // (the dropdown's "select the hovered option" shortcut) silently
-        // overwrote a typed custom value with the nearest preset the instant
-        // you tabbed away — still possible for a value off the 5-minute
-        // grid (e.g. "10:47 PM"), which `onBlur` below guards against
-        // directly. Arrow-key navigation still highlights and selects
-        // presets normally; this only drops the *automatic* highlight that
-        // fired without the user asking for it.
+        // Scrolls the dropdown open to the current (or nearest) time instead
+        // of always starting at 12:00 AM. This alone previously caused a
+        // bug: the dropdown's own Tab/Enter shortcut silently "selects"
+        // whatever's pre-highlighted this way, overwriting a typed custom
+        // value the instant you tabbed away. Fixed below by having
+        // `onSelect` ignore a selection that doesn't match an already fully
+        // typed value, rather than dropping the highlight entirely.
+        focusOnOption={nearestTimeOptionId(value)}
         popoverProps={{ appendTo: 'window' }}
         status={invalid ? 'error' : undefined}
         statusMessage={invalid ? 'Enter a time like 9:30 AM or 14:30.' : undefined}
@@ -190,15 +202,23 @@ function TimeOfDaySelect({
           if (parsed) onChange(parsed);
         }}
         onSelect={(option) => {
+          // `focusOnOption` above pre-highlights the nearest preset purely
+          // for scroll positioning, and Tab/Enter treat a highlighted
+          // option as if it were explicitly chosen — including when the
+          // user actually typed a different, complete, valid value of their
+          // own (e.g. "10:47 PM", off the 5-minute grid) and just tabbed
+          // away. Ignore the selection in that case rather than let it
+          // silently overwrite what was typed; a genuine click/keyboard
+          // selection while nothing conflicting is typed still applies
+          // normally.
+          const typed = parseTimeOfDay(text);
+          if (typed !== null && typed !== option.id) return;
           setText(String(option.value));
           onChange(String(option.id));
         }}
-        // Re-asserts whatever the user actually typed as the committed value
-        // on the way out, last, after anything else that happens during the
-        // Tab transition (the dropdown has its own "select the hovered
-        // preset" shortcut on Tab/Enter, tied to internal hover state this
-        // component doesn't control) — so a deliberate custom entry like
-        // "10:45 PM" can't be silently overwritten by a nearby preset.
+        // Belt-and-suspenders: re-asserts whatever's actually typed as the
+        // committed value on the way out, in case anything else during the
+        // Tab transition still slips past the onSelect guard above.
         // Harmless no-op when text already matches what's committed.
         onBlur={() => {
           const parsed = parseTimeOfDay(text);
