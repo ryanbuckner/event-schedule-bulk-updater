@@ -8,7 +8,15 @@
  */
 
 import { dashboard } from '@wix/dashboard';
-import { Box, Button, Card, SectionHelper, Text, TextButton } from '@wix/design-system';
+import {
+  Box,
+  Button,
+  Card,
+  LinearProgressBar,
+  SectionHelper,
+  Text,
+  TextButton,
+} from '@wix/design-system';
 import React, { useState } from 'react';
 import { getSchedule, saveSchedule } from '../../../backend/api/schedule.web';
 import {
@@ -19,9 +27,8 @@ import {
   templateCsv,
 } from '../../../lib/csv';
 import { errorMessage } from '../../../lib/errors';
+import { paceWrites } from '../../../lib/pacing';
 import type { ImportPlan, RowResult } from '../../../lib/types';
-
-const COMMIT_CHUNK = 10;
 
 export function ImportPanel({
   eventId,
@@ -38,6 +45,7 @@ export function ImportPanel({
   const [committing, setCommitting] = useState(false);
   const [planning, setPlanning] = useState(false);
   const [failures, setFailures] = useState<RowResult[]>([]);
+  const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
 
   const readFile = async (file: File) => {
     setFormatError(null);
@@ -67,22 +75,35 @@ export function ImportPanel({
     if (!plan || plan.errors.length > 0) return;
     setCommitting(true);
     setFailures([]);
+    // Updates + creates are sent one at a time below (deletes stay one real
+    // bulk call — up to 100 ids — since that's a genuinely different,
+    // already-batched endpoint, not N sequential individual writes).
+    const total = plan.updates.length + plan.creates.length;
+    setProgress(total > 0 ? { done: 0, total } : null);
 
     const results: RowResult[] = [];
+    let done = 0;
     try {
-      // Updates and creates first, deletes last: if something fails, the file's
-      // content has already landed and nothing has been destroyed yet.
-      for (let i = 0; i < plan.updates.length; i += COMMIT_CHUNK) {
-        const chunk = plan.updates.slice(i, i + COMMIT_CHUNK).map((update) => ({
-          id: update.row.id,
-          fields: update.fields,
-          next: update.row,
-        }));
-        results.push(...(await saveSchedule(eventId, { updates: chunk })).results);
+      // Updates and creates first, deletes last: if something fails, the
+      // file's content has already landed and nothing has been destroyed
+      // yet. One item per request, paced (see pacing.ts), rather than a
+      // batch of COMMIT_CHUNK: keeps the API's burst quota from tripping in
+      // the first place instead of paying to recover after it does, and
+      // gives real per-item progress along the way.
+      for (let i = 0; i < plan.updates.length; i++) {
+        const update = plan.updates[i];
+        const outcome = await saveSchedule(eventId, {
+          updates: [{ id: update.row.id, fields: update.fields, next: update.row }],
+        });
+        results.push(...outcome.results);
+        setProgress({ done: ++done, total });
+        await paceWrites(done - 1, total);
       }
-      for (let i = 0; i < plan.creates.length; i += COMMIT_CHUNK) {
-        const chunk = plan.creates.slice(i, i + COMMIT_CHUNK);
-        results.push(...(await saveSchedule(eventId, { creates: chunk })).results);
+      for (let i = 0; i < plan.creates.length; i++) {
+        const outcome = await saveSchedule(eventId, { creates: [plan.creates[i]] });
+        results.push(...outcome.results);
+        setProgress({ done: ++done, total });
+        await paceWrites(done - 1, total);
       }
       if (plan.deletes.length > 0) {
         results.push(...(await saveSchedule(eventId, { deletes: plan.deletes })).results);
@@ -93,12 +114,14 @@ export function ImportPanel({
         type: 'error',
       });
       setCommitting(false);
+      setProgress(null);
       return;
     }
 
     const failed = results.filter((r) => !r.ok);
     setFailures(failed);
     setCommitting(false);
+    setProgress(null);
 
     if (failed.length === 0) {
       dashboard.showToast({
@@ -231,6 +254,20 @@ export function ImportPanel({
                     ))}
                   </Box>
                 </SectionHelper>
+              ) : null}
+
+              {progress ? (
+                <Box direction="vertical" gap="SP1">
+                  <LinearProgressBar
+                    value={(progress.done / progress.total) * 100}
+                    label={`Applying ${progress.done} of ${progress.total}…`}
+                    showProgressIndication
+                  />
+                  <Text size="tiny" secondary>
+                    Large imports go a few changes at a time and pause briefly between groups —
+                    that's Wix's own API pacing itself, not this app stalling.
+                  </Text>
+                </Box>
               ) : null}
 
               <Box gap="SP2">

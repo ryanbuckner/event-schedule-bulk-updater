@@ -25,6 +25,7 @@ import React, { useState } from 'react';
 import { saveSchedule } from '../../../backend/api/schedule.web';
 import { shiftMinutes } from '../../../lib/datetime';
 import { errorMessage } from '../../../lib/errors';
+import { paceWrites } from '../../../lib/pacing';
 import type { RowError, RowResult, ScheduleRowFields } from '../../../lib/types';
 import { normalizeDuration, validateRow } from '../../../lib/validation';
 import { NameCell, PlaceCell, RequiredMark, TagsCell, TimeSlotCell } from './cells';
@@ -35,15 +36,6 @@ import { NameCell, PlaceCell, RequiredMark, TagsCell, TimeSlotCell } from './cel
  * since a new item has no end of its own yet worth preserving.
  */
 const DEFAULT_DURATION_MINUTES = 15;
-
-/**
- * Items per create request. Confirmed against real behavior: Wix's Events
- * API accepts about 6 creates before a burst rate limit kicks in, so 5 stays
- * under that — and splitting into rounds this way is also what makes a real
- * "N of M added" progress bar possible, since one giant request only ever
- * resolves once, all at once.
- */
-const CREATE_CHUNK = 5;
 
 function blankRow(startIso: string, timeZoneId: string): ScheduleRowFields {
   return {
@@ -135,17 +127,17 @@ export function AddItemsPanel({
     setFailures([]);
     setProgress({ done: 0, total: drafts.length });
 
-    // Chunked into separate requests rather than one giant call — a large
-    // batch can take a while (the API's own rate limit means some items only
-    // land after a retry-with-backoff), and one request only ever resolves
-    // once, all at once, which can't show real progress along the way.
+    // One item per request, paced (see pacing.ts), rather than a batch —
+    // keeps the API's burst quota from tripping in the first place instead
+    // of paying to recover after it does, and a one-item request resolving
+    // on its own is what makes real "N of M added" progress possible.
     const results: RowResult[] = [];
     try {
-      for (let i = 0; i < drafts.length; i += CREATE_CHUNK) {
-        const chunk = drafts.slice(i, i + CREATE_CHUNK);
-        const outcome = await saveSchedule(eventId, { creates: chunk });
+      for (let i = 0; i < drafts.length; i++) {
+        const outcome = await saveSchedule(eventId, { creates: [drafts[i]] });
         results.push(...outcome.results);
-        setProgress({ done: Math.min(i + CREATE_CHUNK, drafts.length), total: drafts.length });
+        setProgress({ done: i + 1, total: drafts.length });
+        await paceWrites(i, drafts.length);
       }
     } catch (error) {
       // A chunk can fail outright (network error, etc.) after earlier chunks

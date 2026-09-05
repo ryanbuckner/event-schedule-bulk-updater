@@ -64,6 +64,7 @@ import {
 } from '../../../backend/api/schedule.web';
 import { formatInZone, shiftMinutes } from '../../../lib/datetime';
 import { errorMessage } from '../../../lib/errors';
+import { paceWrites } from '../../../lib/pacing';
 import { downloadCsv, exportFilename, toCsv } from '../../../lib/csv';
 import { type EventSummary, type RowResult, type ScheduleRow } from '../../../lib/types';
 import { AddItemsPanel } from './AddItemsPanel';
@@ -81,9 +82,6 @@ import {
 import { ImportPanel } from './ImportPanel';
 import { TimeShiftBar } from './TimeShiftBar';
 import { useScheduleEdits } from './useScheduleEdits';
-
-/** Rows per save request. Small enough to give real progress on a big edit. */
-const SAVE_CHUNK = 10;
 
 export function ScheduleEditor({
   event,
@@ -198,11 +196,15 @@ export function ScheduleEditor({
 
     const results: RowResult[] = [];
     try {
-      for (let i = 0; i < pending.length; i += SAVE_CHUNK) {
-        const chunk = pending.slice(i, i + SAVE_CHUNK);
-        const outcome = await saveSchedule(event.id, { updates: chunk });
+      // One item per request (see pacing.ts) rather than a batch of
+      // SAVE_CHUNK, so progress advances after every item and the pause
+      // that keeps the API's burst quota from ever tripping happens between
+      // individual requests, not buried inside one large one.
+      for (let i = 0; i < pending.length; i++) {
+        const outcome = await saveSchedule(event.id, { updates: [pending[i]] });
         results.push(...outcome.results);
-        setProgress({ done: Math.min(i + SAVE_CHUNK, pending.length), total: pending.length });
+        setProgress({ done: i + 1, total: pending.length });
+        await paceWrites(i, pending.length);
       }
     } catch (error) {
       const message = errorMessage(error, 'The save could not be completed.');
