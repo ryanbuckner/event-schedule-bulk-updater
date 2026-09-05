@@ -30,7 +30,7 @@ import {
   type ScheduleRow,
   type ScheduleRowFields,
 } from './types';
-import { validateRow } from './validation';
+import { normalizeDuration, validateRow } from './validation';
 
 /**
  * The columns a CSV file actually has. `startDate`/`startTime` together
@@ -341,8 +341,13 @@ export function planImport(text: string, live: ScheduleRow[]): ImportPlan {
       }
     }
 
+    // Snapped forward to the minimum item duration here, same as the grid and
+    // Add Schedule Item, rather than rejecting the whole import over it — the
+    // native Wix schedule editor fixes this up for you too.
+    const normalized = normalizeDuration(next);
+
     const rowKey = existing ? existing.id : `line-${lineNumber}`;
-    const rowErrors = validateRow(rowKey, next).map(
+    const rowErrors = validateRow(rowKey, normalized).map(
       (error): RowError => ({
         ...error,
         message: `Line ${lineNumber}: ${error.message}`,
@@ -354,15 +359,17 @@ export function planImport(text: string, live: ScheduleRow[]): ImportPlan {
     }
 
     if (existing) {
-      const changed = changedFields(existing, next).filter((field) => presentFields.has(field));
+      const changed = changedFields(existing, normalized).filter((field) =>
+        presentFields.has(field),
+      );
       if (changed.length > 0) {
         plan.updates.push({
-          row: { ...next, id: existing.id, draft: existing.draft },
+          row: { ...normalized, id: existing.id, draft: existing.draft },
           fields: changed,
         });
       }
     } else {
-      plan.creates.push(next);
+      plan.creates.push(normalized);
     }
   });
 

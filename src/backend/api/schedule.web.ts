@@ -26,7 +26,7 @@ import {
   type ScheduleRow,
   type ScheduleRowFields,
 } from '../../lib/types';
-import { validateRow } from '../../lib/validation';
+import { normalizeDuration, validateRow } from '../../lib/validation';
 
 /** Raised when a request is rejected before anything is written. */
 export class ValidationFailure extends Error {
@@ -94,24 +94,26 @@ export const saveSchedule = webMethod(
       );
       if (fields.length === 0) continue;
 
-      const rowErrors = validateRow(update.id, update.next);
+      const next = normalizeDuration(update.next);
+      const rowErrors = validateRow(update.id, next);
       if (rowErrors.length > 0) {
-        const label = update.next.name || update.id;
+        const label = next.name || update.id;
         problems.push(...rowErrors.map((error) => `${label}: ${error.message}`));
         continue;
       }
-      updates.push({ id: update.id, fields, next: update.next });
+      updates.push({ id: update.id, fields, next });
     }
 
     const creates: ScheduleRowFields[] = [];
     (payload.creates ?? []).forEach((create, index) => {
-      const rowErrors = validateRow(`new-${index}`, create);
+      const next = normalizeDuration(create);
+      const rowErrors = validateRow(`new-${index}`, next);
       if (rowErrors.length > 0) {
-        const label = create.name || `New item ${index + 1}`;
+        const label = next.name || `New item ${index + 1}`;
         problems.push(...rowErrors.map((error) => `${label}: ${error.message}`));
         return;
       }
-      creates.push(create);
+      creates.push(next);
     });
 
     const deletes = (payload.deletes ?? [])

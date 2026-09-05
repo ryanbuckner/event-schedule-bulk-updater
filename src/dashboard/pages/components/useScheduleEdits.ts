@@ -16,7 +16,7 @@ import {
   type ScheduleRow,
   type ScheduleRowFields,
 } from '../../../lib/types';
-import { groupErrorsByRow, validateRow } from '../../../lib/validation';
+import { groupErrorsByRow, normalizeDuration, validateRow } from '../../../lib/validation';
 
 /** Strips the read-only parts of a row, leaving just the editable fields. */
 export function toFields(row: ScheduleRow): ScheduleRowFields {
@@ -86,7 +86,12 @@ export function useScheduleEdits(rows: ScheduleRow[]): ScheduleEdits {
       setEdits((previous) => {
         const next = new Map(previous);
         const current = previous.get(row.id) ?? toFields(row);
-        next.set(row.id, { ...current, [field]: value });
+        const updated = { ...current, [field]: value };
+        // Snaps `end` forward to the minimum item duration instead of letting
+        // a too-short gap sit there until save rejects it — mirrors the
+        // native Wix schedule editor's own behavior. A no-op unless this
+        // edit was to `start` or `end` and actually shortened things.
+        next.set(row.id, normalizeDuration(updated));
         return next;
       });
     },
@@ -104,7 +109,7 @@ export function useScheduleEdits(rows: ScheduleRow[]): ScheduleEdits {
           const current = previous.get(row.id) ?? toFields(row);
           // Each row is computed from its own current values only — no cascade
           // between rows, whatever their chronological order.
-          next.set(row.id, change(current, row));
+          next.set(row.id, normalizeDuration(change(current, row)));
         }
         return next;
       });

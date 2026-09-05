@@ -6,13 +6,29 @@
  * server rejection is surfaced verbatim rather than being second-guessed.
  */
 
-import { durationMinutes } from './datetime';
+import { durationMinutes, shiftMinutes } from './datetime';
 import {
   LIMITS,
   MIN_ITEM_DURATION_MINUTES,
   type RowError,
   type ScheduleRowFields,
 } from './types';
+
+/**
+ * Snaps `end` forward to satisfy the minimum item duration, the way the
+ * native Wix schedule editor fixes this up for you rather than rejecting the
+ * save — used everywhere start/end get set (the grid, Add Schedule Item, CSV
+ * import, and the backend's own write path) so `validateRow`'s duration
+ * check below is a safety net, not something a normal edit should ever hit.
+ * Leaves fields alone when `start`/`end` aren't parseable dates; that's
+ * `validateRow`'s job to catch.
+ */
+export function normalizeDuration(fields: ScheduleRowFields): ScheduleRowFields {
+  const duration = durationMinutes(fields.start, fields.end);
+  if (duration === null || duration >= MIN_ITEM_DURATION_MINUTES) return fields;
+  const end = shiftMinutes(fields.start, MIN_ITEM_DURATION_MINUTES);
+  return end ? { ...fields, end } : fields;
+}
 
 /** Validates one row's fields. Returns every problem found, not just the first. */
 export function validateRow(

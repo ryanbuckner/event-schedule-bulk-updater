@@ -17,7 +17,7 @@ import { saveSchedule } from '../../../backend/api/schedule.web';
 import { shiftMinutes } from '../../../lib/datetime';
 import { errorMessage } from '../../../lib/errors';
 import type { RowError, RowResult, ScheduleRowFields } from '../../../lib/types';
-import { validateRow } from '../../../lib/validation';
+import { normalizeDuration, validateRow } from '../../../lib/validation';
 import { NameCell, TimeSlotCell } from './cells';
 
 /** No duration was specified for a new item, so it gets a plain, easily-adjusted default. */
@@ -63,7 +63,9 @@ export function AddItemsPanel({
     value: ScheduleRowFields[K],
   ) => {
     setDrafts((previous) =>
-      previous.map((row, i) => (i === index ? { ...row, [field]: value } : row)),
+      previous.map((row, i) =>
+        i === index ? normalizeDuration({ ...row, [field]: value }) : row,
+      ),
     );
   };
 
