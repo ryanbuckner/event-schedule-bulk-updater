@@ -37,6 +37,7 @@ import {
 } from '@wix/design-system';
 import {
   CollectionEmptyState,
+  MoreActions,
   MultiBulkActionToolbar,
   PrimaryActionButton,
   PrimaryActions,
@@ -48,7 +49,14 @@ import {
   type TableColumn,
 } from '@wix/patterns';
 import { CollectionPage } from '@wix/patterns/page';
-import { Check, Delete, Publish, Unsaved } from '@wix/wix-ui-icons-common';
+import {
+  Check,
+  Delete,
+  DownloadImportSmall,
+  Publish,
+  UploadExportSmall,
+  Unsaved,
+} from '@wix/wix-ui-icons-common';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   getSchedule,
@@ -448,6 +456,24 @@ export function ScheduleEditor({
             onClick={() => runPublish('discard')}
           />
         }
+        moreActions={
+          <MoreActions
+            items={[
+              {
+                text: 'Import CSV',
+                prefixIcon: <DownloadImportSmall />,
+                onClick: () => setShowImport(true),
+                disabled: busy,
+              },
+              {
+                text: 'Export CSV',
+                prefixIcon: <UploadExportSmall />,
+                onClick: () => downloadCsv(toCsv(serverRows.current), exportFilename(event.title)),
+                disabled: busy,
+              },
+            ]}
+          />
+        }
       />
       <CollectionPage.Content>
         <Box direction="vertical" gap="SP3">
@@ -598,17 +624,6 @@ export function ScheduleEditor({
             secondaryActions={
               <ToolbarSecondaryActions
                 items={[
-                  {
-                    label: 'Export CSV',
-                    onClick: () =>
-                      downloadCsv(toCsv(serverRows.current), exportFilename(event.title)),
-                    disabled: busy,
-                  },
-                  {
-                    label: 'Import CSV',
-                    onClick: () => setShowImport(true),
-                    disabled: busy,
-                  },
                   {
                     label: 'Add Schedule Item',
                     onClick: () => setShowAddItems(true),
