@@ -220,6 +220,11 @@ export function NameCell({
       status={message ? 'error' : undefined}
       statusMessage={message}
       disabled={disabled}
+      // WDS `Input` defaults to selecting all text on focus, which makes the
+      // first keystroke after clicking into an existing name replace the
+      // whole thing instead of inserting at the click position — read by
+      // testers as "the cursor jumps to the end."
+      autoSelect={false}
       onChange={(event) => onChange(event.target.value)}
     />
   );
