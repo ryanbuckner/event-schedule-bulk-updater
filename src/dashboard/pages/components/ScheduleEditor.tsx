@@ -52,7 +52,7 @@ import {
   Check,
   Delete,
   DownloadImportSmall,
-  Publish,
+  GlobeSmall,
   UploadExportSmall,
   Unsaved,
 } from '@wix/wix-ui-icons-common';
@@ -732,7 +732,7 @@ export function ScheduleEditor({
               </Text>
             </Box>
             <Box gap="SP1" verticalAlign="middle">
-              <Publish size="16px" color={UNPUBLISHED_ICON_COLOR} />
+              <GlobeSmall size="16px" color={UNPUBLISHED_ICON_COLOR} />
               <Text size="tiny" secondary>
                 Unpublished changes: saved to the draft, not yet visible to guests
               </Text>

@@ -32,7 +32,7 @@ import {
 } from '@wix/design-system';
 import { SupportedWixLocales } from '@wix/design-systems-locale-utils';
 import { i18n } from '@wix/essentials';
-import { Hidden, Publish, Unsaved, Visible } from '@wix/wix-ui-icons-common';
+import { GlobeSmall, Hidden, Unsaved, Visible } from '@wix/wix-ui-icons-common';
 import { Asterisk } from '@wix/wix-ui-icons-common/system';
 import React, { useMemo, useRef, useState } from 'react';
 import { fromInputStrings, toInputStrings } from '../../../lib/datetime';
@@ -548,8 +548,13 @@ export function RowStatusIcons({
         </Tooltip>
       </span>
       <span style={{ visibility: unpublished ? 'visible' : 'hidden' }}>
+        {/* `GlobeSmall`, not the `Publish` icon: `Publish`'s SVG defines a
+            `<clipPath id="Publish__a">` with a hardcoded, non-unique id, and
+            this component renders once per row — many simultaneous copies of
+            that id on one page is a known way for later instances to fail to
+            render. `GlobeSmall` is plain paths, no id-based defs. */}
         <Tooltip content="Unpublished changes: saved to the draft, but guests still see the last published schedule.">
-          <Publish size="18px" color={UNPUBLISHED_ICON_COLOR} />
+          <GlobeSmall size="18px" color={UNPUBLISHED_ICON_COLOR} />
         </Tooltip>
       </span>
     </Box>
