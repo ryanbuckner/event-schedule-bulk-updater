@@ -603,15 +603,14 @@ export function ScheduleEditor({
               );
             }}
             primaryActionButton={
-              <PrimaryActionButton
-                onClick={save}
-                disabled={busy || blocked || edits.dirtyCount === 0}
-              >
-                {progress
-                  ? `Saving ${progress.done} of ${progress.total}…`
-                  : edits.dirtyCount > 0
-                    ? `Save ${edits.dirtyCount} change${edits.dirtyCount === 1 ? '' : 's'} as draft`
-                    : 'Save draft'}
+              // TEMP diagnostic: label text and disabled state normally react
+              // to edits.dirtyCount, which flips the instant a row's first
+              // field is edited — testing whether that simultaneous
+              // text+disabled change on this always-visible button is what's
+              // resetting focus/selection in whichever cell is being typed
+              // into. Revert once we know.
+              <PrimaryActionButton onClick={save} disabled={busy}>
+                {progress ? `Saving ${progress.done} of ${progress.total}…` : 'Save draft'}
               </PrimaryActionButton>
             }
             emptyState={
