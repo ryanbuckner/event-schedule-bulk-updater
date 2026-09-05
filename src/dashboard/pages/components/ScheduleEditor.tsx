@@ -33,13 +33,7 @@
 
 import { dashboard } from '@wix/dashboard';
 import { i18n } from '@wix/essentials';
-import {
-  Box,
-  Button,
-  SectionHelper,
-  Text,
-  TextButton,
-} from '@wix/design-system';
+import { Box, Breadcrumbs, Button, SectionHelper, Text } from '@wix/design-system';
 import {
   CollectionEmptyState,
   MoreActions,
@@ -438,6 +432,24 @@ export function ScheduleEditor({
     <CollectionPage>
       <CollectionPage.Header
         title={{ text: event.title }}
+        breadcrumbs={
+          <Breadcrumbs
+            activeId="schedule"
+            items={[
+              { id: 'events', value: 'Events' },
+              { id: 'event', value: event.title },
+              { id: 'schedule', value: 'Schedule' },
+            ]}
+            onClick={(item) => {
+              // Only "Events" actually goes anywhere — the event name and
+              // "Schedule" are just context for where you are, same as the
+              // rest of this trail can't link into Wix's own native Events
+              // app pages (its own breadcrumb, e.g. Features), which this
+              // app has no access to.
+              if (item.id === 'events') onChangeEvent();
+            }}
+          />
+        }
         subtitle={{
           text:
             event.formattedDateAndTime ??
@@ -481,12 +493,6 @@ export function ScheduleEditor({
       />
       <CollectionPage.Content>
         <Box direction="vertical" gap="SP3">
-          <Box gap="SP2" verticalAlign="middle">
-            <TextButton size="small" onClick={onChangeEvent} disabled={busy}>
-              Choose a different event
-            </TextButton>
-          </Box>
-
           {blocked ? (
             <SectionHelper appearance="danger" title="Fix these before saving">
               <Box direction="vertical" gap="SP1">
