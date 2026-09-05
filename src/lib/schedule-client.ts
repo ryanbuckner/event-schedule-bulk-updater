@@ -61,15 +61,9 @@ const WRITE_CONCURRENCY = 1;
  * A 100-item shift means up to 100 update calls in a burst, which is exactly
  * the shape of request that gets rate limited. Backing off and retrying turns a
  * throttled row into a saved row instead of a failure the owner has to chase.
- *
- * The backoff durations matter here, not just their existence: Wix's own
- * troubleshooting guidance for a 429 is "wait a minute, then retry" — the
- * previous 400ms/1.2s backoff was nowhere near long enough to cross an
- * actual rate-limit window, so retries were just failing again immediately.
- * These give a stuck write real time to land in the next window instead.
  */
-const MAX_ATTEMPTS = 4;
-const BACKOFF_MS = [5000, 15000, 30000];
+const MAX_ATTEMPTS = 3;
+const BACKOFF_MS = [8000, 20000];
 
 const elevated = {
   list: auth.elevate(schedule.listScheduleItems),
@@ -136,9 +130,10 @@ export async function readSchedule(eventId: string): Promise<ScheduleSnapshot> {
   let offset = 0;
   let draftNotPublished = false;
   let fetched = 0;
+  const cooldown: Cooldown = { until: 0 };
 
   for (;;) {
-    const response = await withRetry(() =>
+    const response = await withRetry(cooldown, () =>
       elevated.list({
         eventId: [eventId],
         state: [...ALL_STATES],
@@ -214,21 +209,47 @@ function isTransient(error: unknown): boolean {
 const delay = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
 /**
+ * A cooldown shared across every write in one `writeSchedule` call.
+ *
+ * The rate limit this is working around is a shared burst quota (confirmed:
+ * a batch succeeds ~6 at a time, then fails immediately until a pause lets it
+ * reset), not a per-item one — so one write hitting it should make every
+ * *other* pending write in the same batch wait out the same pause, rather
+ * than each independently discovering the limit and backing off on its own.
+ * With writes already sequential (`WRITE_CONCURRENCY`), the first failure
+ * sets `until`; every write still to run — including ones about to attempt
+ * for the first time, not just this one retrying — checks it before its next
+ * attempt. That turns "N stuck items each wait up to 28s" into "one pause,
+ * paid once, for the whole batch."
+ */
+interface Cooldown {
+  until: number;
+}
+
+function waitForCooldown(cooldown: Cooldown): Promise<void> {
+  const remaining = cooldown.until - Date.now();
+  return remaining > 0 ? delay(remaining) : Promise.resolve();
+}
+
+/**
  * Runs one write, retrying transient failures with a short backoff.
  *
  * Permanent failures (validation, permissions, not-found) are returned on the
  * first attempt — retrying those would just slow the batch down and would still
  * fail.
  */
-async function withRetry<T>(operation: () => Promise<T>): Promise<T> {
+async function withRetry<T>(cooldown: Cooldown, operation: () => Promise<T>): Promise<T> {
   let lastError: unknown;
   for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
+    await waitForCooldown(cooldown);
     try {
       return await operation();
     } catch (error) {
       lastError = error;
       if (!isTransient(error) || attempt === MAX_ATTEMPTS - 1) throw error;
-      await delay(BACKOFF_MS[attempt] ?? BACKOFF_MS[BACKOFF_MS.length - 1]);
+      const wait = BACKOFF_MS[attempt] ?? BACKOFF_MS[BACKOFF_MS.length - 1];
+      cooldown.until = Math.max(cooldown.until, Date.now() + wait);
+      await waitForCooldown(cooldown);
     }
   }
   throw lastError;
@@ -273,6 +294,11 @@ export async function writeSchedule(
   spec: WriteSpec,
 ): Promise<SaveOutcome> {
   const results: RowResult[] = [];
+  // Shared by every write below, including the delete batches — one write
+  // anywhere in this call hitting the rate limit pauses all the others too,
+  // instead of each independently discovering and backing off from the same
+  // limit (see Cooldown's own comment).
+  const cooldown: Cooldown = { until: 0 };
 
   const updateTasks = (spec.updates ?? []).map(
     (update) => async (): Promise<RowResult> => {
@@ -287,7 +313,9 @@ export async function writeSchedule(
         // replace is safe under normal use — the one trade-off is that a
         // change made by someone else between this row's load and this save
         // could be overwritten, which the field mask would have prevented.
-        await withRetry(() => elevated.update(update.id, eventId, { item: toItemData(update.next) }));
+        await withRetry(cooldown, () =>
+          elevated.update(update.id, eventId, { item: toItemData(update.next) }),
+        );
         return { rowId: update.id, name: update.next.name, ok: true, operation: 'update' };
       } catch (error) {
         return {
@@ -304,7 +332,7 @@ export async function writeSchedule(
   const createTasks = (spec.creates ?? []).map(
     (create, index) => async (): Promise<RowResult> => {
       try {
-        const response = await withRetry(() =>
+        const response = await withRetry(cooldown, () =>
           elevated.add(eventId, { item: toItemData(create) }),
         );
         return {
@@ -332,7 +360,7 @@ export async function writeSchedule(
   for (let i = 0; i < deletes.length; i += DELETE_BATCH_SIZE) {
     const batch = deletes.slice(i, i + DELETE_BATCH_SIZE);
     try {
-      await withRetry(() => elevated.remove(eventId, { itemIds: batch.map((d) => d.id) }));
+      await withRetry(cooldown, () => elevated.remove(eventId, { itemIds: batch.map((d) => d.id) }));
       results.push(
         ...batch.map(
           (d): RowResult => ({ rowId: d.id, name: d.name, ok: true, operation: 'delete' }),
