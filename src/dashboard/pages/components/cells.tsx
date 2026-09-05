@@ -268,7 +268,7 @@ export function NameCell({
     setText(values.name);
   }
 
-  return (
+  const input = (
     <Input
       size="small"
       value={text}
@@ -277,6 +277,8 @@ export function NameCell({
       status={message ? 'error' : undefined}
       statusMessage={message}
       disabled={disabled}
+      // Ellipsis (rather than a hard clip) hints there's more text than fits.
+      textOverflow="ellipsis"
       // WDS `Input` also defaults to selecting all text on focus, which
       // would make the first keystroke after clicking into an existing name
       // replace the whole thing instead of inserting at the click position.
@@ -288,6 +290,12 @@ export function NameCell({
       }}
     />
   );
+
+  // Wrapped in a Tooltip (rather than a plain `title` attribute, which
+  // `Input` doesn't type as a prop) so a name longer than the box is still
+  // readable on hover, styled consistently with every other tooltip in this
+  // grid. Skipped for an empty field — nothing there worth a tooltip for.
+  return text ? <Tooltip content={text}>{input}</Tooltip> : input;
 }
 
 /**
