@@ -211,21 +211,42 @@ export function NameCell({
   onChange,
 }: CellProps & { onChange: (value: string) => void }) {
   const message = errorFor(errors, 'name');
+
+  // Buffered locally, same reasoning as `TimeSlotCell` below: the grid's
+  // underlying table keys rows by their array index, not item id, and
+  // re-renders on every edit (each row's dirty/status state changes as you
+  // type). Binding `value` straight to `values.name` meant every keystroke
+  // re-drove the input from that external value — content ended up correct,
+  // but the browser resets the caret to the end whenever an input's value is
+  // reassigned externally, even to text that already matches what's there.
+  // Buffering avoids re-deriving the DOM value from outside on every render;
+  // it only re-syncs when the committed value actually changes underneath
+  // this cell (e.g. a CSV import, or a reload).
+  const [text, setText] = useState(values.name);
+  const lastCommitted = useRef(values.name);
+  if (lastCommitted.current !== values.name && values.name !== text) {
+    lastCommitted.current = values.name;
+    setText(values.name);
+  }
+
   return (
     <Input
       size="small"
-      value={values.name}
+      value={text}
       maxLength={LIMITS.NAME_MAX}
       placeholder="Session name"
       status={message ? 'error' : undefined}
       statusMessage={message}
       disabled={disabled}
-      // WDS `Input` defaults to selecting all text on focus, which makes the
-      // first keystroke after clicking into an existing name replace the
-      // whole thing instead of inserting at the click position — read by
-      // testers as "the cursor jumps to the end."
+      // WDS `Input` also defaults to selecting all text on focus, which
+      // would make the first keystroke after clicking into an existing name
+      // replace the whole thing instead of inserting at the click position.
       autoSelect={false}
-      onChange={(event) => onChange(event.target.value)}
+      onChange={(event) => {
+        setText(event.target.value);
+        lastCommitted.current = event.target.value;
+        onChange(event.target.value);
+      }}
     />
   );
 }
