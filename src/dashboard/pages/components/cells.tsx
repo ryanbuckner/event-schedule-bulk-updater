@@ -390,18 +390,25 @@ export function TimeSlotCell({
 
   return (
     <Box direction="vertical" gap="SP1">
-      <Box gap="SP1" verticalAlign="middle">
-        <DatePicker
-          size="small"
-          locale={toDatePickerLocale(i18n.getLocale())}
-          dateStyle="medium"
-          width="140px"
-          value={ymdToLocalDate(date)}
-          disabled={disabled}
-          popoverProps={{ appendTo: 'window' }}
-          status={message ? 'error' : undefined}
-          onChange={(picked) => update(localDateToYmd(picked), time)}
-        />
+      {/* `width="100%"`, with the date side taking whatever room the time
+          side (a fixed, content-driven width) doesn't need, so this row
+          fills the column the same way Place/Tags below it already do —
+          instead of shrinking to its own fixed-pixel content and leaving
+          Place/Tags looking wider by comparison. */}
+      <Box width="100%" gap="SP1" verticalAlign="middle">
+        <Box flex={1} minWidth="140px">
+          <DatePicker
+            size="small"
+            locale={toDatePickerLocale(i18n.getLocale())}
+            dateStyle="medium"
+            width="100%"
+            value={ymdToLocalDate(date)}
+            disabled={disabled}
+            popoverProps={{ appendTo: 'window' }}
+            status={message ? 'error' : undefined}
+            onChange={(picked) => update(localDateToYmd(picked), time)}
+          />
+        </Box>
         <TimeOfDaySelect
           value={time}
           disabled={disabled}
