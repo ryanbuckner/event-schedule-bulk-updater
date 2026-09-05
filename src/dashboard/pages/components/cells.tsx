@@ -506,13 +506,15 @@ export function RowStatusIcons({
     );
   }
   // Always the same shape — both icon slots stay mounted, toggled by
-  // `visibility` rather than by conditionally rendering them. The status
-  // column sits right next to Item Name in the grid, and this cell used to
-  // return `null` outright until a row went dirty; the first keystroke that
-  // makes a row dirty landed on the exact same render as the edited cell's
-  // own value update, and that sibling cell going from nothing to a mounted
+  // `visibility` rather than by conditionally rendering them. This used to
+  // sit in a leading column right next to Item Name (now trailing, grouped
+  // with Hidden in ScheduleEditor's "meta" column), and returned `null`
+  // outright until a row went dirty; the first keystroke that makes a row
+  // dirty landed on the exact same render as the edited cell's own value
+  // update, and that sibling cell going from nothing to a mounted
   // Tooltip+icon on that render was enough to reset focus/selection in the
-  // cell being typed into. Keeping the DOM shape constant avoids that.
+  // cell being typed into. Keeping the DOM shape constant avoids that —
+  // still true regardless of which column this renders in.
   return (
     <Box gap="SP1" verticalAlign="middle">
       <span style={{ visibility: dirty ? 'visible' : 'hidden' }}>

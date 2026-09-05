@@ -24,6 +24,11 @@
  * CSV export and import (see `csv.ts`). Because there's no cell for either,
  * the grid never marks them changed, so a grid save's field mask never
  * includes them and their current server values are left untouched.
+ *
+ * The trailing "meta" column groups every per-row state indicator — Hidden,
+ * Unsaved, Unpublished — after the editable fields rather than leading with
+ * a dedicated status column, so Item Name sits right next to the row
+ * checkbox instead of leaving a gap for icons in front of it.
  */
 
 import { dashboard } from '@wix/dashboard';
@@ -319,20 +324,6 @@ export function ScheduleEditor({
   const columns: TableColumn<ScheduleRow>[] = useMemo(
     () => [
       {
-        id: 'status',
-        name: 'Status',
-        title: '',
-        width: '44px',
-        hiddenFromCustomColumnsSelection: true,
-        render: (row: ScheduleRow) => (
-          <RowStatusIcons
-            dirty={liveRef.current.edits.isDirty(row.id)}
-            unpublished={liveRef.current.draftNotPublished}
-            errors={liveRef.current.edits.errorsByRow.get(row.id)}
-          />
-        ),
-      },
-      {
         id: 'name',
         name: 'Item Name',
         title: 'Item Name',
@@ -413,17 +404,30 @@ export function ScheduleEditor({
         },
       },
       {
-        id: 'hidden',
-        name: 'Hidden',
+        // Combines the Hidden toggle with the row's status icons (Unsaved /
+        // Unpublished), trailing the row rather than leading it — frees up
+        // the space that used to sit between the checkbox and Item Name for
+        // a dedicated leading status column, and groups all of a row's
+        // meta/state indicators (as opposed to its editable content) in one
+        // place at the end.
+        id: 'meta',
+        name: 'Status',
         title: '',
-        width: '40px',
+        width: '84px',
         hiddenFromCustomColumnsSelection: true,
         render: (row: ScheduleRow) => (
-          <HiddenCell
-            values={liveRef.current.edits.valueOf(row)}
-            disabled={liveRef.current.busy}
-            onChange={(hidden) => liveRef.current.edits.setField(row, 'hidden', hidden)}
-          />
+          <Box gap="SP1" verticalAlign="middle">
+            <RowStatusIcons
+              dirty={liveRef.current.edits.isDirty(row.id)}
+              unpublished={liveRef.current.draftNotPublished}
+              errors={liveRef.current.edits.errorsByRow.get(row.id)}
+            />
+            <HiddenCell
+              values={liveRef.current.edits.valueOf(row)}
+              disabled={liveRef.current.busy}
+              onChange={(hidden) => liveRef.current.edits.setField(row, 'hidden', hidden)}
+            />
+          </Box>
         ),
       },
     ],
