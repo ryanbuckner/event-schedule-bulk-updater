@@ -43,13 +43,17 @@ import {
 const ALL_STATES = ['DRAFT', 'VISIBLE', 'HIDDEN'] as const;
 
 /**
- * How many writes to have in flight at once. Lowered from 5 after a
- * real-world burst of 26 concurrent creates (one large Add Schedule Item
- * batch) produced 21 generic "System error occurred" failures — a smaller
- * burst is less likely to trip whatever's overloaded on the API side in the
- * first place, on top of the broadened retry classification above.
+ * How many writes to have in flight at once.
+ *
+ * Confirmed against real behavior, not guessed: a batch of creates succeeds
+ * about 6 at a time, then the rest fail immediately (not a slowdown — a hard
+ * burst quota), and manually retrying the failed ones after a pause succeeds
+ * another ~6 at a time, repeating until everything lands. That's a token-
+ * bucket-style rate limit, not raw overload, so sequential (1 in flight)
+ * avoids spending the burst allowance faster than necessary — the retry
+ * backoff below is what actually recovers once the quota's hit.
  */
-const WRITE_CONCURRENCY = 3;
+const WRITE_CONCURRENCY = 1;
 
 /**
  * Retries per write, for transient failures only.
@@ -57,9 +61,15 @@ const WRITE_CONCURRENCY = 3;
  * A 100-item shift means up to 100 update calls in a burst, which is exactly
  * the shape of request that gets rate limited. Backing off and retrying turns a
  * throttled row into a saved row instead of a failure the owner has to chase.
+ *
+ * The backoff durations matter here, not just their existence: Wix's own
+ * troubleshooting guidance for a 429 is "wait a minute, then retry" — the
+ * previous 400ms/1.2s backoff was nowhere near long enough to cross an
+ * actual rate-limit window, so retries were just failing again immediately.
+ * These give a stuck write real time to land in the next window instead.
  */
-const MAX_ATTEMPTS = 3;
-const BACKOFF_MS = [400, 1200];
+const MAX_ATTEMPTS = 4;
+const BACKOFF_MS = [5000, 15000, 30000];
 
 const elevated = {
   list: auth.elevate(schedule.listScheduleItems),
